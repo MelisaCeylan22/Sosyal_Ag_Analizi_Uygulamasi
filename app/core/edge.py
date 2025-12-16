@@ -9,3 +9,4 @@ class Edge:
     u: int
     v: int
     weight: float = 1.0
+

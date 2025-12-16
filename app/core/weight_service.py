@@ -8,3 +8,4 @@ class WeightService:
         de = (a.etkilesim - b.etkilesim) ** 2
         db = (a.baglanti_sayisi - b.baglanti_sayisi) ** 2
         return 1.0 / (1.0 + da + de + db)
+

@@ -1,24 +1,28 @@
 from __future__ import annotations
-from PySide6.QtCore import QPointF
-from PySide6.QtGui import QBrush, QPen
-from PySide6.QtWidgets import QGraphicsEllipseItem, QGraphicsLineItem, QGraphicsItem
+from PySide6.QtWidgets import QGraphicsEllipseItem, QGraphicsLineItem, QGraphicsTextItem, QGraphicsItem
 
 class NodeItem(QGraphicsEllipseItem):
-    def __init__(self, node_id: int, radius: float = 18.0):
+    def __init__(self, node_id: int, label: str = "", radius: float = 18.0):
         super().__init__(-radius, -radius, radius * 2, radius * 2)
         self.node_id = node_id
-        self.edges: list["EdgeItem"] = []
+        self._edges: list["EdgeItem"] = []
 
         self.setFlag(QGraphicsItem.ItemIsMovable, True)
         self.setFlag(QGraphicsItem.ItemIsSelectable, True)
         self.setFlag(QGraphicsItem.ItemSendsGeometryChanges, True)
 
-    def add_edge(self, edge: "EdgeItem") -> None:
-        self.edges.append(edge)
+        self.text = QGraphicsTextItem(label, self)
+        self.text.setPos(-radius, -radius - 18)
+
+    def set_label(self, s: str) -> None:
+        self.text.setPlainText(s)
+
+    def add_edge(self, e: "EdgeItem") -> None:
+        self._edges.append(e)
 
     def itemChange(self, change, value):
         if change == QGraphicsItem.ItemPositionHasChanged:
-            for e in self.edges:
+            for e in self._edges:
                 e.update_position()
         return super().itemChange(change, value)
 
@@ -27,7 +31,7 @@ class EdgeItem(QGraphicsLineItem):
         super().__init__()
         self.a = a
         self.b = b
-        self.setZValue(-1)  # çizgiler node’un arkasında kalsın
+        self.setZValue(-1)  # çizgiler node’un arkasında
         a.add_edge(self)
         b.add_edge(self)
         self.update_position()
