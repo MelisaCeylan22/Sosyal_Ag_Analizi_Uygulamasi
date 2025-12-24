@@ -1,30 +1,35 @@
-from __future__ import annotations
+﻿from __future__ import annotations
+
+import math
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QSplitter, QVBoxLayout, QFormLayout,
-    QLineEdit, QPushButton, QLabel, QGroupBox
+    QLineEdit, QPushButton, QLabel, QGroupBox, QFileDialog, QMessageBox
 )
 from PySide6.QtCore import Qt
 
 from app.ui.graph_view import GraphView
 from app.ui.graphics_items import NodeItem, EdgeItem
 
+from app.core.storage import StorageService
 from app.core.graph import Graph
 from app.core.node import Node
 from app.core.edge import undirected_key
 from app.core.weight_service import WeightService
 
+
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Social Graph - PySide6 (Step 2)")
+        self.setWindowTitle("Social Graph - PySide6 (Dynamic Weight + I/O)")
         self.resize(1100, 700)
 
         self.graph = Graph()
         self.view = GraphView()
-        self.view.nodeSelected.connect(self.on_node_selected)
+        if hasattr(self.view, "nodeSelected"):
+            self.view.nodeSelected.connect(self.on_node_selected)
 
         self.node_items: dict[int, NodeItem] = {}
-        self.edge_items: dict[tuple[int,int], EdgeItem] = {}
+        self.edge_items: dict[tuple[int, int], EdgeItem] = {}
 
         root = QWidget()
         self.setCentralWidget(root)
@@ -85,10 +90,58 @@ class MainWindow(QMainWindow):
         f2.addRow(btn_eadd)
         f2.addRow(btn_edel)
 
+        # ---- Weight formülü (Dinamik) ----
+        gW = QGroupBox("Weight Formülü (katsayılar)")
+        fW = QFormLayout(gW)
+
+        self.in_a = QLineEdit(str(WeightService.params.a))
+        self.in_b = QLineEdit(str(WeightService.params.b))
+        self.in_c = QLineEdit(str(WeightService.params.c))
+
+        fW.addRow("a (aktiflik)", self.in_a)
+        fW.addRow("b (etkileşim)", self.in_b)
+        fW.addRow("c (bağlantı)", self.in_c)
+
+        btn_w_update = QPushButton("Tüm Edge Weight'lerini Güncelle")
+        btn_w_update.clicked.connect(self.update_weights_clicked)
+        fW.addRow(btn_w_update)
+
+        btn_w_show = QPushButton("Edge Weight'lerini Göster")
+        btn_w_show.clicked.connect(self.show_weights_clicked)
+        fW.addRow(btn_w_show)
+
+        # ---- File I/O ----
+        g3 = QGroupBox("Dosya (JSON/CSV) + Çıktılar")
+        f3 = QFormLayout(g3)
+
+        btn_csv_load = QPushButton("CSV Yükle")
+        btn_csv_load.clicked.connect(self.csv_load_clicked)
+        btn_csv_save = QPushButton("CSV Kaydet")
+        btn_csv_save.clicked.connect(self.csv_save_clicked)
+
+        btn_json_load = QPushButton("JSON Yükle")
+        btn_json_load.clicked.connect(self.json_load_clicked)
+        btn_json_save = QPushButton("JSON Kaydet")
+        btn_json_save.clicked.connect(self.json_save_clicked)
+
+        btn_adj_list = QPushButton("Komşuluk Listesi Göster")
+        btn_adj_list.clicked.connect(self.show_adj_list_clicked)
+        btn_adj_mat = QPushButton("Komşuluk Matrisi Göster")
+        btn_adj_mat.clicked.connect(self.show_adj_matrix_clicked)
+
+        f3.addRow(btn_csv_load)
+        f3.addRow(btn_csv_save)
+        f3.addRow(btn_json_load)
+        f3.addRow(btn_json_save)
+        f3.addRow(btn_adj_list)
+        f3.addRow(btn_adj_mat)
+
         self.lbl = QLabel("Hazır.")
 
         lay.addWidget(g1)
         lay.addWidget(g2)
+        lay.addWidget(gW)
+        lay.addWidget(g3)
         lay.addWidget(self.lbl)
         lay.addStretch(1)
         return panel
@@ -112,7 +165,7 @@ class MainWindow(QMainWindow):
         self.in_etkilesim.setText(str(n.etkilesim))
         self.in_baglanti.setText(str(n.baglanti_sayisi))
 
-    # ---------- CRUD handlers ----------
+    # ---------- CRUD ----------
     def add_node_clicked(self) -> None:
         try:
             node = self._read_node_inputs()
@@ -124,7 +177,6 @@ class MainWindow(QMainWindow):
     def update_node_clicked(self) -> None:
         try:
             node = self._read_node_inputs()
-            # model update
             self.graph.update_node(
                 node.id,
                 name=node.name,
@@ -132,11 +184,10 @@ class MainWindow(QMainWindow):
                 etkilesim=node.etkilesim,
                 baglanti_sayisi=node.baglanti_sayisi,
             )
-            # UI label update
-            self.node_items[node.id].set_label(f"{node.id}:{node.name}")
-            # weight’leri güncelle (node özellik değişti)
+            if node.id in self.node_items:
+                self.node_items[node.id].set_label(f"{node.id}:{node.name}")
             self.graph.recompute_all_weights(WeightService.compute)
-            self.lbl.setText(f"Node güncellendi: {node.id} (weights updated)")
+            self.lbl.setText(f"Node güncellendi: {node.id}")
         except Exception as e:
             self.lbl.setText(f"Hata: {e}")
 
@@ -153,7 +204,7 @@ class MainWindow(QMainWindow):
             u = int(self.in_u.text().strip())
             v = int(self.in_v.text().strip())
             e = self._add_edge(u, v)
-            self.lbl.setText(f"Edge eklendi: {e.u}-{e.v} w={e.weight:.4f}")
+            self.lbl.setText(f"Edge eklendi: {e.u}-{e.v} w={e.weight:.6f}")
         except Exception as e:
             self.lbl.setText(f"Hata: {e}")
 
@@ -166,7 +217,117 @@ class MainWindow(QMainWindow):
         except Exception as e:
             self.lbl.setText(f"Hata: {e}")
 
-    # ---------- Model + UI glue ----------
+    # ---------- Dynamic weight ----------
+    def update_weights_clicked(self) -> None:
+        try:
+            WeightService.params.a = float(self.in_a.text().strip())
+            WeightService.params.b = float(self.in_b.text().strip())
+            WeightService.params.c = float(self.in_c.text().strip())
+            self.graph.recompute_all_weights(WeightService.compute)
+            self.lbl.setText(f"Weight güncellendi.")
+        except Exception as e:
+            self.lbl.setText(f"Hata (weight): {e}")
+
+    def show_weights_clicked(self) -> None:
+        if not self.graph.edges:
+            QMessageBox.information(self, "Edge Weights", "(Edge yok)")
+            return
+        lines = [f"{u}-{v}   w={e.weight:.6f}" for (u, v), e in sorted(self.graph.edges.items())]
+        QMessageBox.information(self, "Edge Weights", "\n".join(lines))
+
+    # ---------- File handlers (HATAYI FIXLEYEN KISIM: BU FONKSIYONLAR CLASS ICINDE) ----------
+    def csv_load_clicked(self) -> None:
+        path, _ = QFileDialog.getOpenFileName(self, "CSV Seç", "", "CSV Files (*.csv)")
+        if not path:
+            return
+        try:
+            self.graph = StorageService.load_csv(path)
+            self.graph.recompute_all_weights(WeightService.compute)
+            self._render_graph()
+            self.lbl.setText(f"CSV yüklendi: {path}")
+        except Exception as e:
+            QMessageBox.critical(self, "Hata", str(e))
+
+    def csv_save_clicked(self) -> None:
+        path, _ = QFileDialog.getSaveFileName(self, "CSV Kaydet", "graph.csv", "CSV Files (*.csv)")
+        if not path:
+            return
+        try:
+            StorageService.save_csv(self.graph, path)
+            self.lbl.setText(f"CSV kaydedildi: {path}")
+        except Exception as e:
+            QMessageBox.critical(self, "Hata", str(e))
+
+    def json_load_clicked(self) -> None:
+        path, _ = QFileDialog.getOpenFileName(self, "JSON Seç", "", "JSON Files (*.json)")
+        if not path:
+            return
+        try:
+            self.graph = StorageService.load_json(path)
+            self.graph.recompute_all_weights(WeightService.compute)
+            self._render_graph()
+            self.lbl.setText(f"JSON yüklendi: {path}")
+        except Exception as e:
+            QMessageBox.critical(self, "Hata", str(e))
+
+    def json_save_clicked(self) -> None:
+        path, _ = QFileDialog.getSaveFileName(self, "JSON Kaydet", "graph.json", "JSON Files (*.json)")
+        if not path:
+            return
+        try:
+            StorageService.save_json(self.graph, path)
+            self.lbl.setText(f"JSON kaydedildi: {path}")
+        except Exception as e:
+            QMessageBox.critical(self, "Hata", str(e))
+
+    def show_adj_list_clicked(self) -> None:
+        adj = StorageService.adjacency_list(self.graph)
+        text = "\n".join([f"{k}: {v}" for k, v in adj.items()])
+        QMessageBox.information(self, "Komşuluk Listesi", text if text else "(Boş)")
+
+    def show_adj_matrix_clicked(self) -> None:
+        ids, mat = StorageService.adjacency_matrix(self.graph)
+        if not ids:
+            QMessageBox.information(self, "Komşuluk Matrisi", "(Boş)")
+            return
+        header = "    " + " ".join([str(i).rjust(3) for i in ids])
+        lines = [header]
+        for rid, row in zip(ids, mat):
+            lines.append(str(rid).rjust(3) + " " + " ".join([str(x).rjust(3) for x in row]))
+        QMessageBox.information(self, "Komşuluk Matrisi", "\n".join(lines))
+
+    # ---------- Render ----------
+    def _clear_scene(self) -> None:
+        self.view.scene.clear()
+        self.node_items = {}
+        self.edge_items = {}
+
+    def _render_graph(self) -> None:
+        self._clear_scene()
+        ids = sorted(self.graph.nodes.keys())
+        n = len(ids)
+        if n == 0:
+            return
+        R = 220.0
+        for i, nid in enumerate(ids):
+            angle = 2 * math.pi * i / n
+            x = R * math.cos(angle)
+            y = R * math.sin(angle)
+            node = self.graph.nodes[nid]
+            item = NodeItem(nid, label=f"{nid}:{node.name}")
+            item.setPos(x, y)
+            self.view.scene.addItem(item)
+            self.node_items[nid] = item
+
+        for (u, v), _e in self.graph.edges.items():
+            key = undirected_key(u, v)
+            a = self.node_items[key[0]]
+            b = self.node_items[key[1]]
+            eit = EdgeItem(a, b)
+            self.view.scene.addItem(eit)
+            self.edge_items[key] = eit
+
+    # ---------- Helpers ----------
     def _read_node_inputs(self) -> Node:
         return Node(
             id=int(self.in_id.text().strip()),
@@ -184,14 +345,9 @@ class MainWindow(QMainWindow):
         self.node_items[node.id] = item
 
     def _remove_node(self, node_id: int) -> None:
-        # önce bağlı edge UI’larını temizle
         for nb in list(self.graph.neighbors(node_id)):
             self._remove_edge(node_id, nb)
-
-        # model
         self.graph.remove_node(node_id)
-
-        # UI
         it = self.node_items.pop(node_id, None)
         if it:
             self.view.scene.removeItem(it)
@@ -199,7 +355,6 @@ class MainWindow(QMainWindow):
     def _add_edge(self, u: int, v: int):
         e = self.graph.add_edge(u, v, weight_fn=WeightService.compute)
         key = undirected_key(u, v)
-
         a = self.node_items[key[0]]
         b = self.node_items[key[1]]
         eit = EdgeItem(a, b)
@@ -209,9 +364,7 @@ class MainWindow(QMainWindow):
 
     def _remove_edge(self, u: int, v: int) -> None:
         key = undirected_key(u, v)
-        # model
         self.graph.remove_edge(u, v)
-        # UI
         eit = self.edge_items.pop(key, None)
         if eit:
             self.view.scene.removeItem(eit)
