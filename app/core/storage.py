@@ -13,26 +13,70 @@ class StorageService:
     # ---------------- JSON ----------------
     @staticmethod
     def save_json(graph: Graph, path: str) -> None:
-        data = {
-            "nodes": [vars(n) for n in graph.nodes.values()],
-            "edges": [{"u": e.u, "v": e.v, "weight": e.weight} for e in graph.edges.values()],
+        # Node'ları güvenli serialize et
+        nodes_out = []
+        for nid, n in graph.nodes.items():  # <-- .items() önemli
+            nodes_out.append({
+                "id": int(getattr(n, "id", nid)),
+                "name": str(getattr(n, "name", "")),
+                "aktiflik": float(getattr(n, "aktiflik", 0.0)),
+                "etkilesim": float(getattr(n, "etkilesim", 0.0)),
+                "baglanti_sayisi": int(getattr(n, "baglanti_sayisi", 0)),
+                "x": float(getattr(n, "x", 0.0)),
+                "y": float(getattr(n, "y", 0.0)),
+            })
+
+        # Edge'leri güvenli serialize et
+        edges_out = []
+        # edges dict olabilir: {(u,v): EdgeObj}
+        for (u, v), e in graph.edges.items():
+            u2, v2 = undirected_key(int(u), int(v))
+            edges_out.append({
+                "u": int(u2),
+                "v": int(v2),
+                "weight": float(getattr(e, "weight", 1.0)),
+            })
+
+        data: dict[str, Any] = {
+            "type": "social_graph",
+            "nodes": nodes_out,
+            "edges": edges_out,
         }
-        Path(path).write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
 
     @staticmethod
     def load_json(path: str) -> Graph:
-        raw = json.loads(Path(path).read_text(encoding="utf-8"))
+        with open(path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+
         g = Graph()
 
-        for n in raw.get("nodes", []):
-            g.add_node(Node(**n))
+        # nodes
+        for row in data.get("nodes", []):
+            n = Node(
+                id=int(row["id"]),
+                name=str(row.get("name", "")),
+                aktiflik=float(row.get("aktiflik", 0.0)),
+                etkilesim=float(row.get("etkilesim", 0.0)),
+                baglanti_sayisi=int(row.get("baglanti_sayisi", 0)),
+            )
+            # konum varsa yükle
+            n.x = float(row.get("x", 0.0))
+            n.y = float(row.get("y", 0.0))
+            g.add_node(n)
 
-        for e in raw.get("edges", []):
-            u, v = int(e["u"]), int(e["v"])
-            key = undirected_key(u, v)
-            g.edges[key] = Edge(u=key[0], v=key[1], weight=float(e.get("weight", 1.0)))
-            g.adj[u].add(v)
-            g.adj[v].add(u)
+        # edges
+        for row in data.get("edges", []):
+            u = int(row["u"])
+            v = int(row["v"])
+            w = float(row.get("weight", 1.0))
+
+            # add_edge weight param kabul etmese bile güvenli set edeceğiz
+            e = g.add_edge(u, v, weight_fn=None)
+            if hasattr(e, "weight"):
+                e.weight = w
 
         return g
 
@@ -137,4 +181,4 @@ class StorageService:
             i, j = idx[u], idx[v]
             mat[i][j] = 1
             mat[j][i] = 1
-        return ids
+        return ids, mat

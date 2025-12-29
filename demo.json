@@ -1,0 +1,44 @@
+{
+  "type": "social_graph",
+  "nodes": [
+    {
+      "id": 1,
+      "name": "A",
+      "aktiflik": 0.8,
+      "etkilesim": 12.0,
+      "baglanti_sayisi": 3,
+      "x": 0.0,
+      "y": 0.0
+    },
+    {
+      "id": 2,
+      "name": "B",
+      "aktiflik": 0.4,
+      "etkilesim": 5.0,
+      "baglanti_sayisi": 2,
+      "x": 0.0,
+      "y": 0.0
+    },
+    {
+      "id": 3,
+      "name": "C",
+      "aktiflik": 0.6,
+      "etkilesim": 9.0,
+      "baglanti_sayisi": 4,
+      "x": 0.0,
+      "y": 0.0
+    }
+  ],
+  "edges": [
+    {
+      "u": 1,
+      "v": 2,
+      "weight": 0.019546520719311965
+    },
+    {
+      "u": 2,
+      "v": 3,
+      "weight": 0.047528517110266164
+    }
+  ]
+}

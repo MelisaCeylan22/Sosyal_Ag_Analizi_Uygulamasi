@@ -3,12 +3,14 @@
 import math
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QSplitter, QVBoxLayout, QFormLayout,
-    QLineEdit, QPushButton, QLabel, QGroupBox, QFileDialog, QMessageBox
+    QLineEdit, QPushButton, QLabel, QGroupBox, QFileDialog, QMessageBox,
+    QDialog, QTextEdit
 )
 from PySide6.QtCore import Qt
 
 from app.ui.graph_view import GraphView
 from app.ui.graphics_items import NodeItem, EdgeItem
+from app.ui.test_dialog import TestDialog
 
 from app.core.storage import StorageService
 from app.core.graph import Graph
@@ -24,11 +26,21 @@ from app.algorithms.components import connected_components
 from app.algorithms.centrality import degree_centrality, closeness_centrality
 from app.algorithms.welsh_powell import welsh_powell_coloring
 
-from app.core.mysql_storage import MySqlStorageService
-
 from PySide6.QtWidgets import QScrollArea, QSizePolicy
 
 from PySide6.QtWidgets import QTableWidget, QTableWidgetItem, QHeaderView
+
+import random
+import time
+
+
+
+import random
+from PySide6.QtCore import QTimer
+from PySide6.QtWidgets import QSpinBox, QDoubleSpinBox
+
+
+
 
 
 
@@ -48,6 +60,15 @@ class MainWindow(QMainWindow):
 
         self.node_items: dict[int, NodeItem] = {}
         self.edge_items: dict[tuple[int, int], EdgeItem] = {}
+        # --- animasyon state ---
+        self._anim_timer = QTimer(self)
+        self._anim_timer.timeout.connect(self._anim_step)
+        self._anim_order: list[int] = []
+        self._anim_parent: dict[int, int | None] = {}
+        self._anim_idx = 0
+        self._anim_prev: int | None = None
+        self._anim_last_edge_key: tuple[int, int] | None = None
+
 
         root = QWidget()
         self.setCentralWidget(root)
@@ -123,7 +144,10 @@ class MainWindow(QMainWindow):
         btn_color = QPushButton("Welsh–Powell (Coloring)")
         btn_color.clicked.connect(self.coloring_clicked)
 
-        for b in (btn_bfs, btn_dfs, btn_dij, btn_ast, btn_comp, btn_cent, btn_color):
+        btn_test = QPushButton("Tüm Algoritmaları Test Et")
+        btn_test.clicked.connect(self.test_all_algorithms)
+
+        for b in (btn_bfs, btn_dfs, btn_dij, btn_ast, btn_comp, btn_cent, btn_color, btn_test):
             b.setMinimumHeight(30)
             b.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
 
@@ -134,6 +158,7 @@ class MainWindow(QMainWindow):
         fA.addRow(btn_comp)
         fA.addRow(btn_cent)
         fA.addRow(btn_color)
+        fA.addRow(btn_test)
 
         # ---- Node form ----
         g1 = QGroupBox("Node CRUD")
@@ -217,7 +242,7 @@ class MainWindow(QMainWindow):
         fW.addRow(btn_w_update)
         fW.addRow(btn_w_show)
 
-        # ---- File I/O + MySQL ----
+        # ---- File I/O ----
         g3 = QGroupBox("Dosya (JSON/CSV) + Çıktılar")
         f3 = QFormLayout(g3)
         f3.setVerticalSpacing(8)
@@ -238,14 +263,9 @@ class MainWindow(QMainWindow):
         btn_adj_mat = QPushButton("Komşuluk Matrisi Göster")
         btn_adj_mat.clicked.connect(self.show_adj_matrix_clicked)
 
-        btn_db_load = QPushButton("MySQL Yükle")
-        btn_db_load.clicked.connect(self.mysql_load_clicked)
-        btn_db_save = QPushButton("MySQL Kaydet")
-        btn_db_save.clicked.connect(self.mysql_save_clicked)
-
         for b in (
             btn_csv_load, btn_csv_save, btn_json_load, btn_json_save,
-            btn_adj_list, btn_adj_mat, btn_db_load, btn_db_save
+            btn_adj_list, btn_adj_mat
         ):
             b.setMinimumHeight(30)
             b.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
@@ -256,12 +276,48 @@ class MainWindow(QMainWindow):
         f3.addRow(btn_json_save)
         f3.addRow(btn_adj_list)
         f3.addRow(btn_adj_mat)
-        f3.addRow(btn_db_load)
-        f3.addRow(btn_db_save)
 
         # ---- Status ----
         self.lbl = QLabel("Hazır.")
         self.lbl.setWordWrap(True)
+
+                # ---- Test grafı üret (Rastgele) ----
+        gT = QGroupBox("Test Grafı (Rastgele)")
+        fT = QFormLayout(gT)
+
+        self.sp_test_n = QSpinBox()
+        self.sp_test_n.setRange(2, 5000)
+        self.sp_test_n.setValue(15)
+
+        self.sp_test_p = QDoubleSpinBox()
+        self.sp_test_p.setRange(0.01, 1.0)
+        self.sp_test_p.setSingleStep(0.01)
+        self.sp_test_p.setValue(0.20)
+
+        btn_make = QPushButton("Rastgele Graf Oluştur")
+        btn_make.clicked.connect(self.make_random_graph_clicked)
+
+        fT.addRow("Düğüm sayısı (n)", self.sp_test_n)
+        fT.addRow("Yoğunluk (p)", self.sp_test_p)
+        fT.addRow(btn_make)
+
+        # ---- Animasyon ----
+        gAnim = QGroupBox("Animasyon")
+        fAnim = QFormLayout(gAnim)
+
+        self.sp_anim_ms = QSpinBox()
+        self.sp_anim_ms.setRange(10, 5000)
+        self.sp_anim_ms.setValue(250)
+
+        btn_stop_anim = QPushButton("Animasyonu Durdur")
+        btn_stop_anim.clicked.connect(self.stop_animation)
+
+        fAnim.addRow("Adım süresi (ms)", self.sp_anim_ms)
+        fAnim.addRow(btn_stop_anim)
+
+        lay.addWidget(gT)
+        lay.addWidget(gAnim)
+
 
         # Sıra: önce algoritmalar sonra diğerleri
         lay.addWidget(gA)
@@ -615,12 +671,13 @@ class MainWindow(QMainWindow):
         try:
             s, _ = self._read_start_goal()
             out = bfs(self.graph, s)
-
-            self._show_result("BFS", out, start=s)  # <<< 1 satır
-
-            QMessageBox.information(self, "BFS", f"Order:\n{out['order']}")
+            self._show_result("BFS", out)  # sende varsa
+            order = out.get("order", [])
+            parent = out.get("parent", {})
+            self.animate_traversal(order, parent, title="BFS")
         except Exception as e:
             QMessageBox.critical(self, "Hata", str(e))
+
 
 
 
@@ -628,12 +685,13 @@ class MainWindow(QMainWindow):
         try:
             s, _ = self._read_start_goal()
             out = dfs(self.graph, s)
-
-            self._show_result("DFS", out, start=s)
-
-            QMessageBox.information(self, "DFS", f"Order:\n{out['order']}")
+            self._show_result("DFS", out)
+            order = out.get("order", [])
+            parent = out.get("parent", {})
+            self.animate_traversal(order, parent, title="DFS")
         except Exception as e:
             QMessageBox.critical(self, "Hata", str(e))
+
 
     def dijkstra_clicked(self):
         try:
@@ -641,6 +699,18 @@ class MainWindow(QMainWindow):
             out = dijkstra(self.graph, s, g)
 
             self._show_result("Dijkstra", out, start=s, goal=g)
+
+            # Animasyon için order'ı oluştur (prev'den)
+            prev = out.get("prev", {})
+            order = []
+            # Ziyaret edilen düğümleri sıra ile ekle
+            visited = set()
+            for nid in sorted(prev.keys()):
+                if nid not in visited:
+                    order.append(nid)
+                    visited.add(nid)
+            
+            self.animate_traversal(order, prev, title="Dijkstra")
 
             QMessageBox.information(self, "Dijkstra", f"Path: {out['path']}\nCost: {out['cost']}")
         except Exception as e:
@@ -652,6 +722,18 @@ class MainWindow(QMainWindow):
             out = astar(self.graph, s, g)
 
             self._show_result("A*", out, start=s, goal=g)
+            
+            # Animasyon için order'ı oluştur (prev'den)
+            prev = out.get("prev", {})
+            order = []
+            # Ziyaret edilen düğümleri sıra ile ekle
+            visited = set()
+            for nid in sorted(prev.keys()):
+                if nid not in visited:
+                    order.append(nid)
+                    visited.add(nid)
+            
+            self.animate_traversal(order, prev, title="A*")
             
             QMessageBox.information(self, "A*", f"Path: {out['path']}\nCost: {out['cost']}")
         except Exception as e:
@@ -685,36 +767,354 @@ class MainWindow(QMainWindow):
             coloring = welsh_powell_coloring(self.graph)
             k = (max(coloring.values()) + 1) if coloring else 0
 
-            # UI label’a renk numarası ekleyelim (görsel kanıt)
+            # UI label'a renk numarası ekleyelim ve düğüme renk ata
             for nid, col in coloring.items():
                 n = self.graph.nodes.get(nid)
                 name = n.name if n else ""
                 if nid in self.node_items:
                     self.node_items[nid].set_label(f"{nid}:{name} (c{col})")
+                    self.node_items[nid].set_color(col)
 
             text = f"Renk sayısı: {k}\n\n" + "\n".join([f"{nid} -> c{col}" for nid, col in sorted(coloring.items())])
             QMessageBox.information(self, "Welsh–Powell", text)
         except Exception as e:
             QMessageBox.critical(self, "Hata", str(e))
 
-    def mysql_save_clicked(self) -> None:
+    def test_all_algorithms(self) -> None:
+        """
+        Tüm algoritmaları test eder ve sonuçlarını popup dialog'da adım adım gösterir.
+        """
         try:
-            MySqlStorageService.save_graph(self.graph, graph_id=1, name="SocialGraph")
-            self.lbl.setText("MySQL kaydedildi (graph_id=1).")
-        except Exception as e:
-            QMessageBox.critical(self, "MySQL Hata", str(e))
+            if not self.graph.nodes:
+                QMessageBox.warning(self, "Uyarı", "Lütfen önce bir graf oluşturun.")
+                return
 
-    def mysql_load_clicked(self) -> None:
-        try:
-            self.graph = MySqlStorageService.load_graph(graph_id=1)
-            # dinamik weight istiyorsan yeniden hesapla:
-            self.graph.recompute_all_weights(WeightService.compute)
-            self._render_graph()
-            if hasattr(self, "_sync_edge_labels"):
-                self._sync_edge_labels()
-            self.lbl.setText("MySQL yüklendi (graph_id=1).")
+            # Dialog oluştur
+            dlg = TestDialog(self)
+            dlg.clear_results()
+
+            # Grafik bilgisi
+            n_nodes = len(self.graph.nodes)
+            n_edges = len(self.graph.edges)
+            
+            dlg.add_result(f"📊 GRAF BİLGİSİ")
+            dlg.add_result(f"  Düğüm Sayısı: {n_nodes}")
+            dlg.add_result(f"  Edge Sayısı: {n_edges}")
+            dlg.add_result(f"  Yoğunluk: {2*n_edges/(n_nodes*(n_nodes-1)) if n_nodes > 1 else 0:.4f}")
+            dlg.add_separator()
+
+            # BFS Testi
+            dlg.add_result(f"\n1️⃣  BFS Algoritması Çalışıyor...")
+            try:
+                s, _ = self._read_start_goal()
+                t0 = time.perf_counter()
+                out = bfs(self.graph, s)
+                t1 = time.perf_counter()
+                bfs_time = (t1 - t0) * 1000
+                
+                order = out.get("order", [])
+                dlg.add_result(f"✅ BFS Tamamlandı")
+                dlg.add_result(f"  Ziyaret Sayısı: {len(order)}")
+                dlg.add_result(f"  Ziyaret Sırası: {' → '.join(map(str, order[:15]))}{'...' if len(order) > 15 else ''}")
+                dlg.add_result(f"  Çalışma Süresi: {bfs_time:.4f} ms")
+            except Exception as e:
+                dlg.add_result(f"❌ BFS Hatası: {str(e)}")
+
+            dlg.add_separator()
+
+            # DFS Testi
+            dlg.add_result(f"\n2️⃣  DFS Algoritması Çalışıyor...")
+            try:
+                s, _ = self._read_start_goal()
+                t0 = time.perf_counter()
+                out = dfs(self.graph, s)
+                t1 = time.perf_counter()
+                dfs_time = (t1 - t0) * 1000
+                
+                order = out.get("order", [])
+                dlg.add_result(f"✅ DFS Tamamlandı")
+                dlg.add_result(f"  Ziyaret Sayısı: {len(order)}")
+                dlg.add_result(f"  Ziyaret Sırası: {' → '.join(map(str, order[:15]))}{'...' if len(order) > 15 else ''}")
+                dlg.add_result(f"  Çalışma Süresi: {dfs_time:.4f} ms")
+            except Exception as e:
+                dlg.add_result(f"❌ DFS Hatası: {str(e)}")
+
+            dlg.add_separator()
+
+            # Dijkstra Testi
+            dlg.add_result(f"\n3️⃣  Dijkstra Algoritması Çalışıyor...")
+            try:
+                s, g = self._read_start_goal()
+                t0 = time.perf_counter()
+                out = dijkstra(self.graph, s, g)
+                t1 = time.perf_counter()
+                dij_time = (t1 - t0) * 1000
+                
+                path = out.get("path", [])
+                cost = out.get("cost")
+                dlg.add_result(f"✅ Dijkstra Tamamlandı")
+                dlg.add_result(f"  Başlangıç: {s}, Hedef: {g}")
+                dlg.add_result(f"  Yol Uzunluğu: {len(path)}")
+                dlg.add_result(f"  Yol: {' → '.join(map(str, path))}")
+                dlg.add_result(f"  Toplam Maliyet: {cost:.6f}" if cost else "  Yol Bulunamamıştır!")
+                dlg.add_result(f"  Çalışma Süresi: {dij_time:.4f} ms")
+            except Exception as e:
+                dlg.add_result(f"❌ Dijkstra Hatası: {str(e)}")
+
+            dlg.add_separator()
+
+            # A* Testi
+            dlg.add_result(f"\n4️⃣  A* Algoritması Çalışıyor...")
+            try:
+                s, g = self._read_start_goal()
+                t0 = time.perf_counter()
+                out = astar(self.graph, s, g)
+                t1 = time.perf_counter()
+                ast_time = (t1 - t0) * 1000
+                
+                path = out.get("path", [])
+                cost = out.get("cost")
+                dlg.add_result(f"✅ A* Tamamlandı")
+                dlg.add_result(f"  Başlangıç: {s}, Hedef: {g}")
+                dlg.add_result(f"  Yol Uzunluğu: {len(path)}")
+                dlg.add_result(f"  Yol: {' → '.join(map(str, path))}")
+                dlg.add_result(f"  Toplam Maliyet: {cost:.6f}" if cost else "  Yol Bulunamamıştır!")
+                dlg.add_result(f"  Çalışma Süresi: {ast_time:.4f} ms")
+            except Exception as e:
+                dlg.add_result(f"❌ A* Hatası: {str(e)}")
+
+            dlg.add_separator()
+
+            # Components Testi
+            dlg.add_result(f"\n5️⃣  Connected Components Algoritması Çalışıyor...")
+            try:
+                t0 = time.perf_counter()
+                comps = connected_components(self.graph)
+                t1 = time.perf_counter()
+                comp_time = (t1 - t0) * 1000
+                
+                dlg.add_result(f"✅ Connected Components Tamamlandı")
+                dlg.add_result(f"  Bileşen Sayısı: {len(comps)}")
+                for i, comp in enumerate(comps, 1):
+                    dlg.add_result(f"  Bileşen {i}: {comp}")
+                dlg.add_result(f"  Çalışma Süresi: {comp_time:.4f} ms")
+            except Exception as e:
+                dlg.add_result(f"❌ Components Hatası: {str(e)}")
+
+            dlg.add_separator()
+
+            # Centrality Testi
+            dlg.add_result(f"\n6️⃣  Centrality Algoritması Çalışıyor...")
+            try:
+                t0 = time.perf_counter()
+                deg = degree_centrality(self.graph)
+                clo = closeness_centrality(self.graph)
+                t1 = time.perf_counter()
+                cent_time = (t1 - t0) * 1000
+                
+                top_deg = sorted(deg.items(), key=lambda x: x[1], reverse=True)[:5]
+                top_clo = sorted(clo.items(), key=lambda x: x[1], reverse=True)[:5]
+                
+                dlg.add_result(f"✅ Centrality Tamamlandı")
+                dlg.add_result(f"  Top 5 Degree Centrality:")
+                for nid, v in top_deg:
+                    dlg.add_result(f"    Düğüm {nid}: {v:.6f}")
+                dlg.add_result(f"  Top 5 Closeness Centrality:")
+                for nid, v in top_clo:
+                    dlg.add_result(f"    Düğüm {nid}: {v:.6f}")
+                dlg.add_result(f"  Çalışma Süresi: {cent_time:.4f} ms")
+            except Exception as e:
+                dlg.add_result(f"❌ Centrality Hatası: {str(e)}")
+
+            dlg.add_separator()
+
+            # Welsh-Powell Coloring Testi
+            dlg.add_result(f"\n7️⃣  Welsh-Powell Renklendirme Algoritması Çalışıyor...")
+            try:
+                t0 = time.perf_counter()
+                coloring = welsh_powell_coloring(self.graph)
+                t1 = time.perf_counter()
+                col_time = (t1 - t0) * 1000
+                
+                k = (max(coloring.values()) + 1) if coloring else 0
+                dlg.add_result(f"✅ Welsh-Powell Tamamlandı")
+                dlg.add_result(f"  Kullanılan Renk Sayısı: {k}")
+                dlg.add_result(f"  Renkli Düğüm Sayısı: {len(coloring)}")
+                dlg.add_result(f"  Çalışma Süresi: {col_time:.4f} ms")
+            except Exception as e:
+                dlg.add_result(f"❌ Welsh-Powell Hatası: {str(e)}")
+
+            dlg.add_separator()
+            dlg.add_result(f"\n✨ TÜM ALGORITMALAR BAŞARILI BİR ŞEKİLDE TEST EDİLDİ ✨")
+
+            # Dialog'u göster
+            dlg.exec()
+            self.lbl.setText("Test işlemi tamamlandı.")
+
         except Exception as e:
-            QMessageBox.critical(self, "MySQL Hata", str(e))
+            QMessageBox.critical(self, "Hata", str(e))
+
+    def _make_random_graph(self, n: int, p: float) -> Graph:
+        """
+        n: node sayısı
+        p: iki node arasında edge olma olasılığı (yoğunluğu kontrol eder)
+        """
+        g = Graph()
+
+        # Node'lar
+        for i in range(1, n + 1):
+            node = Node(
+                id=i,
+                name=f"N{i}",
+                aktiflik=random.random(),
+                etkilesim=random.randint(0, 20),
+                baglanti_sayisi=0,  # degree sonrası güncelleriz
+            )
+            # A* için (heuristic kullanıyorsan) koordinat ver
+            node.x = random.uniform(-300, 300)
+            node.y = random.uniform(-300, 300)
+            g.add_node(node)
+
+        # Edge'ler (yönsüz, duplicate yok)
+        for i in range(1, n + 1):
+            for j in range(i + 1, n + 1):
+                if random.random() < p:
+                    g.add_edge(i, j, weight_fn=WeightService.compute)
+
+        # Node'ların bağlantı sayısını degree'e göre düzelt
+        for nid in g.nodes:
+            try:
+                deg = len(list(g.neighbors(nid)))
+            except Exception:
+                # neighbors yoksa (çok düşük ihtimal) 0 geç
+                deg = 0
+            g.nodes[nid].baglanti_sayisi = deg
+
+        # weight'leri bir daha hesapla (baglanti_sayisi update sonrası)
+        g.recompute_all_weights(WeightService.compute)
+
+        return g
+
+
+
+
+    def stop_animation(self) -> None:
+        if self._anim_timer.isActive():
+            self._anim_timer.stop()
+        self._anim_order = []
+        self._anim_parent = {}
+        self._anim_idx = 0
+        self._anim_prev = None
+        self._anim_last_edge_key = None
+
+    def _reset_visual_states(self) -> None:
+        # node reset
+        for item in self.node_items.values():
+            item.set_state("default")
+        # edge reset
+        for eitem in self.edge_items.values():
+            if hasattr(eitem, "set_state"):
+                eitem.set_state("default")
+
+    def animate_traversal(self, order: list[int], parent: dict[int, int | None] | None = None, title: str = "Traversal") -> None:
+        self.stop_animation()
+        self._reset_visual_states()
+
+        if not order:
+            self.lbl.setText(f"{title}: gezilecek düğüm yok (order boş).")
+            return
+
+        self._anim_order = order
+        self._anim_parent = parent or {}
+        self._anim_idx = 0
+        self._anim_prev = None
+        self._anim_last_edge_key = None
+
+        interval = int(self.sp_anim_ms.value()) if hasattr(self, "sp_anim_ms") else 250
+        self.lbl.setText(f"{title} animasyonu başladı. Ziyaret sayısı: {len(order)}")
+        self._anim_timer.start(interval)
+
+    def _anim_step(self) -> None:
+        if self._anim_idx >= len(self._anim_order):
+            # bitti
+            if self._anim_prev is not None and self._anim_prev in self.node_items:
+                self.node_items[self._anim_prev].set_state("visited")
+            self._anim_timer.stop()
+            self.lbl.setText("Animasyon bitti.")
+            return
+
+        nid = self._anim_order[self._anim_idx]
+
+        # önceki node visited olsun
+        if self._anim_prev is not None and self._anim_prev in self.node_items:
+            self.node_items[self._anim_prev].set_state("visited")
+
+        # current node
+        if nid in self.node_items:
+            self.node_items[nid].set_state("current")
+            # istersen kamerayı takip ettir:
+            try:
+                self.view.centerOn(self.node_items[nid])
+            except Exception:
+                pass
+
+        # parent varsa: tree edge’i de highlight edelim (çok iyi durur)
+        if nid in self._anim_parent:
+            p = self._anim_parent.get(nid)
+            if p is not None:
+                key = undirected_key(p, nid)
+                eitem = self.edge_items.get(key)
+                if eitem and hasattr(eitem, "set_state"):
+                    eitem.set_state("active")
+                # önceki active edge'i visited yap
+                if self._anim_last_edge_key and self._anim_last_edge_key in self.edge_items:
+                    prev_e = self.edge_items[self._anim_last_edge_key]
+                    if hasattr(prev_e, "set_state"):
+                        prev_e.set_state("visited")
+                self._anim_last_edge_key = key
+
+        self._anim_prev = nid
+        self._anim_idx += 1
+
+    def make_random_graph_clicked(self) -> None:
+        n = int(self.sp_test_n.value())
+        p = float(self.sp_test_p.value())
+
+        # model
+        g = Graph()
+        for i in range(1, n + 1):
+            node = Node(
+                id=i,
+                name=f"N{i}",
+                aktiflik=random.random(),
+                etkilesim=random.randint(0, 20),
+                baglanti_sayisi=0,
+            )
+            # A* için x/y (varsa kullanılır)
+            node.x = random.uniform(-300, 300)
+            node.y = random.uniform(-300, 300)
+            g.add_node(node)
+
+        for i in range(1, n + 1):
+            for j in range(i + 1, n + 1):
+                if random.random() < p:
+                    g.add_edge(i, j, weight_fn=WeightService.compute)
+
+        # degree -> baglanti_sayisi
+        for nid in g.nodes:
+            deg = len(list(g.neighbors(nid)))
+            g.nodes[nid].baglanti_sayisi = deg
+
+        g.recompute_all_weights(WeightService.compute)
+
+        # UI'ya bas
+        self.graph = g
+        self._render_graph()
+        self._sync_edge_labels() if hasattr(self, "_sync_edge_labels") else None
+        self.lbl.setText(f"Rastgele graf üretildi: n={n}, m={len(g.edges)}, p={p}")
+
+
+
 
 
 
