@@ -1,19 +1,24 @@
 from __future__ import annotations
 
 from PySide6.QtWidgets import (
-    QGraphicsEllipseItem,
     QGraphicsLineItem,
     QGraphicsTextItem,
     QGraphicsItem,
 )
-from PySide6.QtGui import QPen, QBrush, QColor
-from PySide6.QtCore import Qt
+from PySide6.QtGui import QPen, QBrush, QColor, QPainter, QPainterPath
+from PySide6.QtCore import Qt, QRectF, QPointF
 
 
-class NodeItem(QGraphicsEllipseItem):
+class NodeItem(QGraphicsItem):
+    """Custom node item that draws a stylized person icon instead of a plain circle.
+
+    Keeps the same public API as before: `set_label`, `set_state`, `add_edge`, and
+    `itemChange` behavior for edge position updates.
+    """
     def __init__(self, node_id: int, label: str = "", radius: float = 18.0):
-        super().__init__(-radius, -radius, radius * 2, radius * 2)
+        super().__init__()
         self.node_id = node_id
+        self.radius = radius
         self._edges: list["EdgeItem"] = []
 
         self.setFlag(QGraphicsItem.ItemIsMovable, True)
@@ -29,8 +34,9 @@ class NodeItem(QGraphicsEllipseItem):
         self._brush_start = QBrush(QColor("#A8D8FF"))
         self._brush_goal = QBrush(QColor("#FFB3B3"))
 
-        self.setPen(self._pen_default)
-        self.setBrush(self._brush_default)
+        # runtime brush/pen used for painting
+        self._current_brush = self._brush_default
+        self._current_pen = self._pen_default
 
         self.text = QGraphicsTextItem(label, self)
         self.text.setDefaultTextColor(QColor("#111111"))
@@ -63,20 +69,64 @@ class NodeItem(QGraphicsEllipseItem):
     def set_state(self, state: str) -> None:
         # state: default | visited | current | start | goal
         if state == "visited":
-            self.setBrush(self._brush_visited)
-            self.setPen(self._pen_default)
+            self._current_brush = self._brush_visited
+            self._current_pen = self._pen_default
         elif state == "current":
-            self.setBrush(self._brush_current)
-            self.setPen(self._pen_current)
+            self._current_brush = self._brush_current
+            self._current_pen = self._pen_current
         elif state == "start":
-            self.setBrush(self._brush_start)
-            self.setPen(self._pen_current)
+            self._current_brush = self._brush_start
+            self._current_pen = self._pen_current
         elif state == "goal":
-            self.setBrush(self._brush_goal)
-            self.setPen(self._pen_current)
+            self._current_brush = self._brush_goal
+            self._current_pen = self._pen_current
         else:
-            self.setBrush(self._brush_default)
-            self.setPen(self._pen_default)
+            self._current_brush = self._brush_default
+            self._current_pen = self._pen_default
+
+        self.update()
+
+    def set_color(self, color_index: int) -> None:
+        colors = [
+            "#FF6B6B", "#4ECDC4", "#45B7D1", "#FFA07A", "#98D8C8",
+            "#F7DC6F", "#BB8FCE", "#85C1E9", "#F8B88B", "#ABEBC6",
+        ]
+        color = colors[color_index % len(colors)]
+        self._current_brush = QBrush(QColor(color))
+        self._current_pen = QPen(Qt.black, 2)
+        self.update()
+
+    def boundingRect(self) -> QRectF:
+        r = self.radius
+        return QRectF(-r - 4, -r - 20, 2 * r + 8, 2 * r + 40)
+
+    def paint(self, painter: QPainter, option, widget=None) -> None:
+        r = self.radius
+        painter.setRenderHint(QPainter.Antialiasing)
+        painter.setPen(self._current_pen)
+        painter.setBrush(self._current_brush)
+
+        # draw head
+        head_r = r * 0.38
+        head_center = QPointF(0, -r * 0.5)
+        painter.drawEllipse(head_center, head_r, head_r)
+
+        # draw body (rounded rect)
+        body_w = r * 0.9
+        body_h = r * 1.0
+        body_rect = QRectF(-body_w / 2, -r * 0.1, body_w, body_h)
+        path = QPainterPath()
+        path.addRoundedRect(body_rect, r * 0.2, r * 0.2)
+        painter.drawPath(path)
+
+        # arms (simple lines)
+        arm_y = -r * 0.0
+        painter.drawLine(QPointF(-body_w / 2, arm_y), QPointF(body_w / 2, arm_y))
+
+        # legs (two lines)
+        leg_y0 = body_rect.bottom()
+        painter.drawLine(QPointF(-body_w / 4, leg_y0), QPointF(-body_w / 4, leg_y0 + r * 0.6))
+        painter.drawLine(QPointF(body_w / 4, leg_y0), QPointF(body_w / 4, leg_y0 + r * 0.6))
 
     def add_edge(self, e: "EdgeItem") -> None:
         self._edges.append(e)
