@@ -1,19 +1,33 @@
 from __future__ import annotations
+from typing import Dict, List
+from .base import neighbors
 
-from app.algorithms.base import Algorithm, AlgoResult
-from app.core.graph import Graph
 
-class WelshPowellColoring(Algorithm):
-    def run(self, graph: Graph, **params) -> AlgoResult:
-        # Greedy: düğümleri dereceye göre sırala
-        order = sorted(list(graph.nodes.keys()), key=lambda n: graph.degree(n), reverse=True)
-        color: dict[int, int] = {}
+def welsh_powell_coloring(graph) -> Dict[int, int]:
+    nodes = list(getattr(graph, "nodes", {}).keys())
+    # dereceye göre azalan sırala
+    nodes.sort(key=lambda x: len(list(neighbors(graph, x))), reverse=True)
 
-        for u in order:
-            used = {color[v] for v in graph.neighbors(u) if v in color}
-            c = 0
-            while c in used:
-                c += 1
-            color[u] = c
+    color: Dict[int, int] = {}
+    current_color = 0
 
-        return AlgoResult("WelshPowell", {"coloring": color, "num_colors": (max(color.values()) + 1 if color else 0)})
+    for u in nodes:
+        if u in color:
+            continue
+        color[u] = current_color
+
+        for v in nodes:
+            if v in color:
+                continue
+            # v’nin aynı renge boyanması için komşularında bu renk olmamalı
+            ok = True
+            for nb in neighbors(graph, v):
+                if color.get(nb) == current_color:
+                    ok = False
+                    break
+            if ok:
+                color[v] = current_color
+
+        current_color += 1
+
+    return color

@@ -1,26 +1,27 @@
 from __future__ import annotations
+from typing import List, Set
+from collections import deque
+from .base import neighbors
 
-from app.algorithms.base import Algorithm, AlgoResult
-from app.core.graph import Graph
 
-class ConnectedComponents(Algorithm):
-    def run(self, graph: Graph, **params) -> AlgoResult:
-        seen: set[int] = set()
-        comps: list[list[int]] = []
+def connected_components(graph) -> List[List[int]]:
+    nodes = sorted(getattr(graph, "nodes", {}).keys())
+    visited: Set[int] = set()
+    comps: List[List[int]] = []
 
-        for nid in graph.nodes:
-            if nid in seen:
-                continue
-            stack = [nid]
-            comp: list[int] = []
-            seen.add(nid)
-            while stack:
-                u = stack.pop()
-                comp.append(u)
-                for v in graph.neighbors(u):
-                    if v not in seen:
-                        seen.add(v)
-                        stack.append(v)
-            comps.append(sorted(comp))
+    for s in nodes:
+        if s in visited:
+            continue
+        q = deque([s])
+        visited.add(s)
+        comp = []
+        while q:
+            u = q.popleft()
+            comp.append(u)
+            for v in neighbors(graph, u):
+                if v not in visited:
+                    visited.add(v)
+                    q.append(v)
+        comps.append(comp)
 
-        return AlgoResult("ConnectedComponents", {"components": comps, "count": len(comps)})
+    return comps

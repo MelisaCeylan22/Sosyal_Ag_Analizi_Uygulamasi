@@ -16,11 +16,29 @@ from app.core.node import Node
 from app.core.edge import undirected_key
 from app.core.weight_service import WeightService
 
+from app.algorithms.bfs import bfs
+from app.algorithms.dfs import dfs
+from app.algorithms.dijkstra import dijkstra
+from app.algorithms.astar import astar
+from app.algorithms.components import connected_components
+from app.algorithms.centrality import degree_centrality, closeness_centrality
+from app.algorithms.welsh_powell import welsh_powell_coloring
+
+from app.core.mysql_storage import MySqlStorageService
+
+from PySide6.QtWidgets import QScrollArea, QSizePolicy
+
+from PySide6.QtWidgets import QTableWidget, QTableWidgetItem, QHeaderView
+
+
+
+
+
 
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Social Graph - PySide6 (Dynamic Weight + I/O)")
+        self.setWindowTitle("Social Graph - PySide6 (Dynamic Weight + I/O + Labels)")
         self.resize(1100, 700)
 
         self.graph = Graph()
@@ -40,18 +58,89 @@ class MainWindow(QMainWindow):
         splitter.setStretchFactor(0, 3)
         splitter.setStretchFactor(1, 1)
 
+        splitter.setSizes([800, 420])
+
+
         layout = QVBoxLayout(root)
         layout.addWidget(splitter)
 
         self._seed_demo()
 
+    def _table_clear(self) -> None:
+        if hasattr(self, "tbl") and self.tbl is not None:
+            self.tbl.setRowCount(0)
+
+    def _table_add_row(self, typ: str, _id: str, val: str) -> None:
+        if not hasattr(self, "tbl") or self.tbl is None:
+            return
+        r = self.tbl.rowCount()
+        self.tbl.insertRow(r)
+        self.tbl.setItem(r, 0, QTableWidgetItem(str(typ)))
+        self.tbl.setItem(r, 1, QTableWidgetItem(str(_id)))
+        self.tbl.setItem(r, 2, QTableWidgetItem(str(val)))
+
+
     def _build_right_panel(self) -> QWidget:
-        panel = QWidget()
-        lay = QVBoxLayout(panel)
+        from PySide6.QtWidgets import QScrollArea, QSizePolicy  # local import (istersen en üste de alabilirsin)
+
+        # Scroll: sığmayan kontroller ezilmesin
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+
+        content = QWidget()
+        lay = QVBoxLayout(content)
+        lay.setContentsMargins(10, 10, 10, 10)
+        lay.setSpacing(12)
+
+        # ---- Algoritmalar ----
+        gA = QGroupBox("Algoritmalar")
+        fA = QFormLayout(gA)
+        fA.setVerticalSpacing(8)
+        fA.setHorizontalSpacing(12)
+
+        self.in_start = QLineEdit("1")
+        self.in_goal = QLineEdit("3")
+        fA.addRow("Start", self.in_start)
+        fA.addRow("Goal", self.in_goal)
+
+        btn_bfs = QPushButton("BFS")
+        btn_bfs.clicked.connect(self.bfs_clicked)
+        btn_dfs = QPushButton("DFS")
+        btn_dfs.clicked.connect(self.dfs_clicked)
+
+        btn_dij = QPushButton("Dijkstra (Start→Goal)")
+        btn_dij.clicked.connect(self.dijkstra_clicked)
+        btn_ast = QPushButton("A* (Start→Goal)")
+        btn_ast.clicked.connect(self.astar_clicked)
+
+        btn_comp = QPushButton("Components")
+        btn_comp.clicked.connect(self.components_clicked)
+
+        btn_cent = QPushButton("Centrality (Degree+Closeness)")
+        btn_cent.clicked.connect(self.centrality_clicked)
+
+        btn_color = QPushButton("Welsh–Powell (Coloring)")
+        btn_color.clicked.connect(self.coloring_clicked)
+
+        for b in (btn_bfs, btn_dfs, btn_dij, btn_ast, btn_comp, btn_cent, btn_color):
+            b.setMinimumHeight(30)
+            b.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+
+        fA.addRow(btn_bfs)
+        fA.addRow(btn_dfs)
+        fA.addRow(btn_dij)
+        fA.addRow(btn_ast)
+        fA.addRow(btn_comp)
+        fA.addRow(btn_cent)
+        fA.addRow(btn_color)
 
         # ---- Node form ----
         g1 = QGroupBox("Node CRUD")
         f1 = QFormLayout(g1)
+        f1.setVerticalSpacing(8)
+        f1.setHorizontalSpacing(12)
+
         self.in_id = QLineEdit()
         self.in_name = QLineEdit()
         self.in_aktiflik = QLineEdit("0.0")
@@ -71,6 +160,10 @@ class MainWindow(QMainWindow):
         btn_del = QPushButton("Node Sil")
         btn_del.clicked.connect(self.delete_node_clicked)
 
+        for b in (btn_add, btn_upd, btn_del):
+            b.setMinimumHeight(30)
+            b.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+
         f1.addRow(btn_add)
         f1.addRow(btn_upd)
         f1.addRow(btn_del)
@@ -78,6 +171,9 @@ class MainWindow(QMainWindow):
         # ---- Edge form ----
         g2 = QGroupBox("Edge CRUD")
         f2 = QFormLayout(g2)
+        f2.setVerticalSpacing(8)
+        f2.setHorizontalSpacing(12)
+
         self.in_u = QLineEdit()
         self.in_v = QLineEdit()
         f2.addRow("U", self.in_u)
@@ -87,12 +183,19 @@ class MainWindow(QMainWindow):
         btn_eadd.clicked.connect(self.add_edge_clicked)
         btn_edel = QPushButton("Edge Sil")
         btn_edel.clicked.connect(self.delete_edge_clicked)
+
+        for b in (btn_eadd, btn_edel):
+            b.setMinimumHeight(30)
+            b.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+
         f2.addRow(btn_eadd)
         f2.addRow(btn_edel)
 
         # ---- Weight formülü (Dinamik) ----
         gW = QGroupBox("Weight Formülü (katsayılar)")
         fW = QFormLayout(gW)
+        fW.setVerticalSpacing(8)
+        fW.setHorizontalSpacing(12)
 
         self.in_a = QLineEdit(str(WeightService.params.a))
         self.in_b = QLineEdit(str(WeightService.params.b))
@@ -104,15 +207,21 @@ class MainWindow(QMainWindow):
 
         btn_w_update = QPushButton("Tüm Edge Weight'lerini Güncelle")
         btn_w_update.clicked.connect(self.update_weights_clicked)
-        fW.addRow(btn_w_update)
-
         btn_w_show = QPushButton("Edge Weight'lerini Göster")
         btn_w_show.clicked.connect(self.show_weights_clicked)
+
+        for b in (btn_w_update, btn_w_show):
+            b.setMinimumHeight(30)
+            b.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+
+        fW.addRow(btn_w_update)
         fW.addRow(btn_w_show)
 
-        # ---- File I/O ----
+        # ---- File I/O + MySQL ----
         g3 = QGroupBox("Dosya (JSON/CSV) + Çıktılar")
         f3 = QFormLayout(g3)
+        f3.setVerticalSpacing(8)
+        f3.setHorizontalSpacing(12)
 
         btn_csv_load = QPushButton("CSV Yükle")
         btn_csv_load.clicked.connect(self.csv_load_clicked)
@@ -129,22 +238,58 @@ class MainWindow(QMainWindow):
         btn_adj_mat = QPushButton("Komşuluk Matrisi Göster")
         btn_adj_mat.clicked.connect(self.show_adj_matrix_clicked)
 
+        btn_db_load = QPushButton("MySQL Yükle")
+        btn_db_load.clicked.connect(self.mysql_load_clicked)
+        btn_db_save = QPushButton("MySQL Kaydet")
+        btn_db_save.clicked.connect(self.mysql_save_clicked)
+
+        for b in (
+            btn_csv_load, btn_csv_save, btn_json_load, btn_json_save,
+            btn_adj_list, btn_adj_mat, btn_db_load, btn_db_save
+        ):
+            b.setMinimumHeight(30)
+            b.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+
         f3.addRow(btn_csv_load)
         f3.addRow(btn_csv_save)
         f3.addRow(btn_json_load)
         f3.addRow(btn_json_save)
         f3.addRow(btn_adj_list)
         f3.addRow(btn_adj_mat)
+        f3.addRow(btn_db_load)
+        f3.addRow(btn_db_save)
 
+        # ---- Status ----
         self.lbl = QLabel("Hazır.")
+        self.lbl.setWordWrap(True)
 
+        # Sıra: önce algoritmalar sonra diğerleri
+        lay.addWidget(gA)
         lay.addWidget(g1)
         lay.addWidget(g2)
         lay.addWidget(gW)
         lay.addWidget(g3)
         lay.addWidget(self.lbl)
         lay.addStretch(1)
-        return panel
+
+        # ---- Sonuç Tablosu ----
+        gR = QGroupBox("Sonuçlar")
+        rLay = QVBoxLayout(gR)
+
+        self.tbl = QTableWidget(0, 3)
+        self.tbl.setHorizontalHeaderLabels(["Tür", "ID", "Değer / Açıklama"])
+        self.tbl.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        self.tbl.setMinimumHeight(180)
+
+        rLay.addWidget(self.tbl)
+
+        lay.addWidget(gR)
+
+
+        scroll.setWidget(content)
+        scroll.setMinimumWidth(380)
+        return scroll
+
 
     # ---------- Demo ----------
     def _seed_demo(self) -> None:
@@ -186,7 +331,10 @@ class MainWindow(QMainWindow):
             )
             if node.id in self.node_items:
                 self.node_items[node.id].set_label(f"{node.id}:{node.name}")
+
             self.graph.recompute_all_weights(WeightService.compute)
+            self._sync_edge_labels()
+
             self.lbl.setText(f"Node güncellendi: {node.id}")
         except Exception as e:
             self.lbl.setText(f"Hata: {e}")
@@ -223,8 +371,11 @@ class MainWindow(QMainWindow):
             WeightService.params.a = float(self.in_a.text().strip())
             WeightService.params.b = float(self.in_b.text().strip())
             WeightService.params.c = float(self.in_c.text().strip())
+
             self.graph.recompute_all_weights(WeightService.compute)
-            self.lbl.setText(f"Weight güncellendi.")
+            self._sync_edge_labels()
+
+            self.lbl.setText("Weight güncellendi.")
         except Exception as e:
             self.lbl.setText(f"Hata (weight): {e}")
 
@@ -235,7 +386,68 @@ class MainWindow(QMainWindow):
         lines = [f"{u}-{v}   w={e.weight:.6f}" for (u, v), e in sorted(self.graph.edges.items())]
         QMessageBox.information(self, "Edge Weights", "\n".join(lines))
 
-    # ---------- File handlers (HATAYI FIXLEYEN KISIM: BU FONKSIYONLAR CLASS ICINDE) ----------
+    def _show_result(self, title: str, out: dict, start=None, goal=None) -> None:
+        # tabloyu temizle
+        self._table_clear()
+
+        # üst satır: hangi algoritma, start/goal
+        meta = []
+        if start is not None:
+            meta.append(f"Start={start}")
+        if goal is not None:
+            meta.append(f"Goal={goal}")
+        self._table_add_row("ALGO", title, " ".join(meta) if meta else "OK")
+
+        # çıkan order/path/cost gibi alanları satır satır yaz
+        if isinstance(out, dict):
+            if "order" in out:
+                self._table_add_row("ORDER", "-", " -> ".join(map(str, out.get("order", []))))
+            if "path" in out:
+                self._table_add_row("PATH", "-", " -> ".join(map(str, out.get("path", []))))
+            if "cost" in out:
+                self._table_add_row("COST", "-", str(out.get("cost"))),
+        # --- GRAF ÜSTÜNDE GÖSTERİM ---
+        self._clear_highlights()
+
+        if isinstance(out, dict):
+            if out.get("path"):
+                self._highlight_path(list(out["path"]))
+            elif out.get("order"):
+                # path yoksa en azından ziyaret sırasındaki node'ları parlat
+                self._highlight_nodes(list(out["order"]))
+
+    
+    
+    def _clear_highlights(self) -> None:
+        for it in self.node_items.values():
+            if hasattr(it, "set_highlight"):
+                it.set_highlight(False)
+        for it in self.edge_items.values():
+            if hasattr(it, "set_highlight"):
+                it.set_highlight(False)
+
+    def _highlight_nodes(self, node_ids: list[int]) -> None:
+        for nid in node_ids:
+            it = self.node_items.get(nid)
+            if it and hasattr(it, "set_highlight"):
+                it.set_highlight(True)
+
+    def _highlight_path(self, path: list[int]) -> None:
+        if not path:
+            return
+        self._highlight_nodes(path)
+
+        # path üzerindeki edge'leri de parlat
+        for u, v in zip(path, path[1:]):
+            key = undirected_key(u, v)  # yönsüz key
+            eit = self.edge_items.get(key)
+            if eit and hasattr(eit, "set_highlight"):
+                eit.set_highlight(True)
+
+
+
+    
+    # ---------- File handlers ----------
     def csv_load_clicked(self) -> None:
         path, _ = QFileDialog.getOpenFileName(self, "CSV Seç", "", "CSV Files (*.csv)")
         if not path:
@@ -244,6 +456,7 @@ class MainWindow(QMainWindow):
             self.graph = StorageService.load_csv(path)
             self.graph.recompute_all_weights(WeightService.compute)
             self._render_graph()
+            self._sync_edge_labels()
             self.lbl.setText(f"CSV yüklendi: {path}")
         except Exception as e:
             QMessageBox.critical(self, "Hata", str(e))
@@ -266,6 +479,7 @@ class MainWindow(QMainWindow):
             self.graph = StorageService.load_json(path)
             self.graph.recompute_all_weights(WeightService.compute)
             self._render_graph()
+            self._sync_edge_labels()
             self.lbl.setText(f"JSON yüklendi: {path}")
         except Exception as e:
             QMessageBox.critical(self, "Hata", str(e))
@@ -286,15 +500,26 @@ class MainWindow(QMainWindow):
         QMessageBox.information(self, "Komşuluk Listesi", text if text else "(Boş)")
 
     def show_adj_matrix_clicked(self) -> None:
-        ids, mat = StorageService.adjacency_matrix(self.graph)
+        res = StorageService.adjacency_matrix(self.graph)
+
+        # res bazen (ids, mat) bazen (ids, mat, something) döndürebilir
+        if isinstance(res, tuple) and len(res) >= 2:
+            ids, mat = res[0], res[1]
+        else:
+            QMessageBox.critical(self, "Hata", "adjacency_matrix beklenmeyen çıktı döndürdü.")
+            return
+
         if not ids:
             QMessageBox.information(self, "Komşuluk Matrisi", "(Boş)")
             return
+
         header = "    " + " ".join([str(i).rjust(3) for i in ids])
         lines = [header]
         for rid, row in zip(ids, mat):
             lines.append(str(rid).rjust(3) + " " + " ".join([str(x).rjust(3) for x in row]))
+
         QMessageBox.information(self, "Komşuluk Matrisi", "\n".join(lines))
+
 
     # ---------- Render ----------
     def _clear_scene(self) -> None:
@@ -308,11 +533,13 @@ class MainWindow(QMainWindow):
         n = len(ids)
         if n == 0:
             return
+
         R = 220.0
         for i, nid in enumerate(ids):
             angle = 2 * math.pi * i / n
             x = R * math.cos(angle)
             y = R * math.sin(angle)
+
             node = self.graph.nodes[nid]
             item = NodeItem(nid, label=f"{nid}:{node.name}")
             item.setPos(x, y)
@@ -323,9 +550,16 @@ class MainWindow(QMainWindow):
             key = undirected_key(u, v)
             a = self.node_items[key[0]]
             b = self.node_items[key[1]]
-            eit = EdgeItem(a, b)
+            eit = EdgeItem(a, b, weight=_e.weight)
             self.view.scene.addItem(eit)
             self.edge_items[key] = eit
+
+    def _sync_edge_labels(self) -> None:
+        for (u, v), e in self.graph.edges.items():
+            key = undirected_key(u, v)
+            it = self.edge_items.get(key)
+            if it and hasattr(it, "set_weight"):
+                it.set_weight(e.weight)
 
     # ---------- Helpers ----------
     def _read_node_inputs(self) -> Node:
@@ -355,9 +589,11 @@ class MainWindow(QMainWindow):
     def _add_edge(self, u: int, v: int):
         e = self.graph.add_edge(u, v, weight_fn=WeightService.compute)
         key = undirected_key(u, v)
+
         a = self.node_items[key[0]]
         b = self.node_items[key[1]]
-        eit = EdgeItem(a, b)
+
+        eit = EdgeItem(a, b, weight=e.weight)
         self.view.scene.addItem(eit)
         self.edge_items[key] = eit
         return e
@@ -368,3 +604,123 @@ class MainWindow(QMainWindow):
         eit = self.edge_items.pop(key, None)
         if eit:
             self.view.scene.removeItem(eit)
+
+    def _read_start_goal(self):
+        s = int(self.in_start.text().strip())
+        g = int(self.in_goal.text().strip())
+        return s, g
+    
+
+    def bfs_clicked(self):
+        try:
+            s, _ = self._read_start_goal()
+            out = bfs(self.graph, s)
+
+            self._show_result("BFS", out, start=s)  # <<< 1 satır
+
+            QMessageBox.information(self, "BFS", f"Order:\n{out['order']}")
+        except Exception as e:
+            QMessageBox.critical(self, "Hata", str(e))
+
+
+
+    def dfs_clicked(self):
+        try:
+            s, _ = self._read_start_goal()
+            out = dfs(self.graph, s)
+
+            self._show_result("DFS", out, start=s)
+
+            QMessageBox.information(self, "DFS", f"Order:\n{out['order']}")
+        except Exception as e:
+            QMessageBox.critical(self, "Hata", str(e))
+
+    def dijkstra_clicked(self):
+        try:
+            s, g = self._read_start_goal()
+            out = dijkstra(self.graph, s, g)
+
+            self._show_result("Dijkstra", out, start=s, goal=g)
+
+            QMessageBox.information(self, "Dijkstra", f"Path: {out['path']}\nCost: {out['cost']}")
+        except Exception as e:
+            QMessageBox.critical(self, "Hata", str(e))
+
+    def astar_clicked(self):
+        try:
+            s, g = self._read_start_goal()
+            out = astar(self.graph, s, g)
+
+            self._show_result("A*", out, start=s, goal=g)
+            
+            QMessageBox.information(self, "A*", f"Path: {out['path']}\nCost: {out['cost']}")
+        except Exception as e:
+            QMessageBox.critical(self, "Hata", str(e))
+
+    def components_clicked(self):
+        try:
+            comps = connected_components(self.graph)
+            text = "\n".join([f"{i+1}) {c}" for i, c in enumerate(comps)])
+            QMessageBox.information(self, "Components", text if text else "(Boş)")
+        except Exception as e:
+            QMessageBox.critical(self, "Hata", str(e))
+
+    def centrality_clicked(self):
+        try:
+            deg = degree_centrality(self.graph)
+            clo = closeness_centrality(self.graph)
+
+            top_deg = sorted(deg.items(), key=lambda x: x[1], reverse=True)[:5]
+            top_clo = sorted(clo.items(), key=lambda x: x[1], reverse=True)[:5]
+
+            msg = "Top Degree:\n" + "\n".join([f"{nid}: {v:.4f}" for nid, v in top_deg])
+            msg += "\n\nTop Closeness:\n" + "\n".join([f"{nid}: {v:.4f}" for nid, v in top_clo])
+
+            QMessageBox.information(self, "Centrality", msg)
+        except Exception as e:
+            QMessageBox.critical(self, "Hata", str(e))
+
+    def coloring_clicked(self):
+        try:
+            coloring = welsh_powell_coloring(self.graph)
+            k = (max(coloring.values()) + 1) if coloring else 0
+
+            # UI label’a renk numarası ekleyelim (görsel kanıt)
+            for nid, col in coloring.items():
+                n = self.graph.nodes.get(nid)
+                name = n.name if n else ""
+                if nid in self.node_items:
+                    self.node_items[nid].set_label(f"{nid}:{name} (c{col})")
+
+            text = f"Renk sayısı: {k}\n\n" + "\n".join([f"{nid} -> c{col}" for nid, col in sorted(coloring.items())])
+            QMessageBox.information(self, "Welsh–Powell", text)
+        except Exception as e:
+            QMessageBox.critical(self, "Hata", str(e))
+
+    def mysql_save_clicked(self) -> None:
+        try:
+            MySqlStorageService.save_graph(self.graph, graph_id=1, name="SocialGraph")
+            self.lbl.setText("MySQL kaydedildi (graph_id=1).")
+        except Exception as e:
+            QMessageBox.critical(self, "MySQL Hata", str(e))
+
+    def mysql_load_clicked(self) -> None:
+        try:
+            self.graph = MySqlStorageService.load_graph(graph_id=1)
+            # dinamik weight istiyorsan yeniden hesapla:
+            self.graph.recompute_all_weights(WeightService.compute)
+            self._render_graph()
+            if hasattr(self, "_sync_edge_labels"):
+                self._sync_edge_labels()
+            self.lbl.setText("MySQL yüklendi (graph_id=1).")
+        except Exception as e:
+            QMessageBox.critical(self, "MySQL Hata", str(e))
+
+
+
+
+
+    
+
+
+

@@ -1,13 +1,34 @@
 from __future__ import annotations
+from typing import Dict
+from .base import neighbors
+from .dijkstra import dijkstra
 
-from app.algorithms.base import Algorithm, AlgoResult
-from app.core.graph import Graph
 
-class DegreeCentrality(Algorithm):
-    def run(self, graph: Graph, **params) -> AlgoResult:
-        rows = []
-        for nid in graph.nodes:
-            rows.append((nid, graph.degree(nid)))
-        rows.sort(key=lambda x: x[1], reverse=True)
-        top5 = rows[:5]
-        return AlgoResult("DegreeCentrality", {"degrees": rows, "top5": top5})
+def degree_centrality(graph) -> Dict[int, float]:
+    nodes = list(getattr(graph, "nodes", {}).keys())
+    n = len(nodes)
+    if n <= 1:
+        return {nid: 0.0 for nid in nodes}
+
+    deg = {nid: len(list(neighbors(graph, nid))) for nid in nodes}
+    return {nid: deg[nid] / (n - 1) for nid in nodes}
+
+
+def closeness_centrality(graph) -> Dict[int, float]:
+    nodes = list(getattr(graph, "nodes", {}).keys())
+    n = len(nodes)
+    if n <= 1:
+        return {nid: 0.0 for nid in nodes}
+
+    res: Dict[int, float] = {}
+    for s in nodes:
+        out = dijkstra(graph, s)  # dist tüm düğümlere
+        dist = out["dist"]
+        # ulaşamadıklarını sayma (inf gibi davran)
+        reachable = [d for (nid, d) in dist.items() if nid != s]
+        if not reachable:
+            res[s] = 0.0
+            continue
+        total = sum(reachable)
+        res[s] = (len(reachable) / total) if total > 0 else 0.0
+    return res

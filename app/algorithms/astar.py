@@ -1,49 +1,38 @@
 from __future__ import annotations
 import heapq
-from math import inf, sqrt
+import math
+from typing import Dict, Optional, Tuple, List
+from .base import neighbors, edge_weight, reconstruct_path, node_pos
 
-from app.algorithms.base import Algorithm, AlgoResult
-from app.core.graph import Graph
 
-class AStar(Algorithm):
-    def run(self, graph: Graph, **params) -> AlgoResult:
-        start = int(params["start"])
-        goal = int(params["goal"])
+def heuristic(graph, a: int, b: int) -> float:
+    ax, ay = node_pos(graph, a)
+    bx, by = node_pos(graph, b)
+    return math.hypot(ax - bx, ay - by)
 
-        def h(a: int, b: int) -> float:
-            na = graph.nodes[a]
-            nb = graph.nodes[b]
-            # UI konumu varsa öklid; yoksa 0
-            return sqrt((na.x - nb.x) ** 2 + (na.y - nb.y) ** 2)
 
-        gscore = {nid: inf for nid in graph.nodes}
-        fscore = {nid: inf for nid in graph.nodes}
-        came: dict[int, int | None] = {nid: None for nid in graph.nodes}
+def astar(graph, start: int, goal: int) -> Dict:
+    g: Dict[int, float] = {start: 0.0}
+    prev: Dict[int, Optional[int]] = {start: None}
+    pq: List[Tuple[float, int]] = [(heuristic(graph, start, goal), start)]
+    closed = set()
 
-        gscore[start] = 0.0
-        fscore[start] = h(start, goal)
+    while pq:
+        f, u = heapq.heappop(pq)
+        if u in closed:
+            continue
+        if u == goal:
+            break
+        closed.add(u)
 
-        pq: list[tuple[float, int]] = [(fscore[start], start)]
-        while pq:
-            _, u = heapq.heappop(pq)
-            if u == goal:
-                break
-            for v in graph.neighbors(u):
-                tentative = gscore[u] + graph.get_edge_weight(u, v)
-                if tentative < gscore[v]:
-                    came[v] = u
-                    gscore[v] = tentative
-                    fscore[v] = tentative + h(v, goal)
-                    heapq.heappush(pq, (fscore[v], v))
+        for v in neighbors(graph, u):
+            w = edge_weight(graph, u, v)
+            ng = g[u] + w
+            if v not in g or ng < g[v]:
+                g[v] = ng
+                prev[v] = u
+                nf = ng + heuristic(graph, v, goal)
+                heapq.heappush(pq, (nf, v))
 
-        if gscore[goal] == inf:
-            path = []
-        else:
-            path = []
-            cur = goal
-            while cur is not None:
-                path.append(cur)
-                cur = came[cur]
-            path.reverse()
-
-        return AlgoResult("A*", {"start": start, "goal": goal, "distance": gscore[goal], "path": path})
+    path = reconstruct_path(prev, start, goal)
+    return {"g": g, "prev": prev, "path": path, "cost": g.get(goal, float("inf"))}
