@@ -419,6 +419,119 @@ Bu projedeki A* uygulaması, düğümlerin uzamsal konumunu kullanarak Öklid me
 - Kuyruk boş değilken heappop ile en küçük f değerine sahip düğüm alınır (PopBest).
 - Eğer düğüm zaten closed içindeyse güncel olmayan bir kayıt olduğu kabul edilir ve atlanır (continue)
 
+**Hedaf Kontrolü ve kapalı Kümeye Alma**
+- Seçilen düğüm hedefse (u == goal) döngü durdurulur (break).
+- Hedef değilse u düğümü closed içine alınır. Böylece aynı düğüm tekrar genişletilmez.
+
+**Gevşetme: Komşuların Güncellenmesi**
+- Her komşu v için:
+   - Kenar ağırlığı w = edge_weight(u, v) alınır.
+   - Yeni aday gerçek maliyet ng = g[u] + w hesaplanır.
+   - Eğer v için daha önce maliyet yoksa veya ng daha küçükse:
+      - g[v] = ng ile gerçek maliyet güncellenir.
+      - prev[v] = u ile en iyi yolun u üzerinden geldiği kaydedilir.
+      - Yeni toplam skor hesaplanır: nf = ng + heuristic(v, goal)
+      - (nf, v) öncelik kuyruğuna eklenir.
+    
+**Yolun Çıkarılması ve Çıktı**
+- Döngü tamamlandıktan sonra reconstruct_path(prev, start, goal) ile prev üzerinden yol geri sarılır.
+- Fonksiyon şu bilgileri döndürür:
+   - g: başlangıçtan düğümlere en iyi bilinen gerçek maliyetler
+   - prev: yol geri sarma için öncül ilişkileri
+   - path: başlangıçtan hedefe düğüm dizisi
+   - cost: hedefe ulaşıldıysa toplam maliyet; aksi durumda inf
+
+
+#### 2.4.4 Karmaşıklık Analizi
+
+Bu implementasyon, aday düğümleri `heapq` tabanlı bir **öncelik kuyruğu** ile yönetir ve her adımda en küçük f-skoruna sahip düğümü genişletir.
+
+**Zaman Karmaşıklığı (Genel):** Uygulamaya ve heuristic’in kalitesine bağlıdır.  
+- En kötü durumda A* geniş ölçekte düğüm genişletebilir ve heap işlemleri nedeniyle zaman maliyeti genellikle **O((V + E) log V)** mertebesinde değerlendirilir (Dijkstra’ya benzer).
+- Heuristic bilgilendiriciyse (hedefe yakınlığı iyi tahmin ediyorsa), pratikte genişletilen düğüm sayısı azalır ve çalışma süresi belirgin şekilde düşer.
+
+**Bu koddaki temel maliyet kaynakları:**
+- `heappop` ve `heappush` işlemleri: her biri **O(log V)**
+- Komşu dolaşımı (neighbors) toplamda kenar sayısıyla ilişkili (**O(E)** mertebesi)
+- Heuristic hesaplaması: `math.hypot` ile sabit zamanlı bir işlem (**O(1)**)
+
+**Bellek Karmaşıklığı: O(V)**
+- `g` ve `prev` en fazla V kayıt tutar.
+- `closed` en fazla V düğüm tutar.
+- `pq` pratikte birden fazla aday kayıt barındırabilir; büyüklüğü problem yapısına bağlıdır ancak tipik olarak V ve E ile ilişkilidir.
+
+### 2.6 Ek Analizler
+#### 2.6.1 Merkeziyet (Centrality) Ölçümleri
+
+Bu projede, sosyal ağ grafı üzerinde düğümlerin ağ içindeki “önemini/merkeziliğini” yorumlamak amacıyla iki temel merkeziyet metriği uygulanmıştır: **Degree Centrality** ve **Closeness Centrality**. Bu metrikler, her düğüm için sayısal bir skor üretir ve düğümler skorlarına göre karşılaştırılabilir.
+
+**Degree Centrality (Bağlantı Sayısı Merkeziyeti)**
+
+Degree centrality, bir düğümün doğrudan kaç bağlantısı olduğunu ölçer. Sosyal ağ bağlamında bu değer, bir kullanıcının **doğrudan kaç kişiyle bağlantıda olduğunu** gösteren basit ama güçlü bir ölçüdür.
+
+**Bu projedeki hesaplama:**
+- Grafın düğümleri `graph.nodes` üzerinden alınır.
+- Her düğüm için komşu sayısı `len(neighbors(graph, nid))` ile hesaplanır.
+- Skor, farklı graf boyutlarında karşılaştırma yapılabilsin diye normalize edilir:
+  - `deg(nid) / (n - 1)`  
+  Burada `n` toplam düğüm sayısıdır. Böylece skor **0 ile 1** aralığına taşınır.
+
+**Yorum:**  
+- Skoru yüksek düğümler, ağda “çok kişiyle doğrudan bağlantılı” düğümlerdir.
+- Ancak bu ölçüm yalnızca **doğrudan komşulukları** dikkate alır; ağın daha uzak yapısını (dolaylı erişimi) tek başına yansıtmayabilir.
+
+
+**Closeness Centrality (Yakınlık Merkeziyeti)**
+ 
+Closeness centrality, bir düğümün ağdaki diğer düğümlere ortalama olarak ne kadar “yakın” olduğunu ölçer. Sosyal ağ yorumunda bu metrik, bir kullanıcının ağın geneline **ne kadar kısa yollarla ulaşabildiğini** gösterir.
+
+**Bu projedeki hesaplama:**
+- Her düğüm `s` için, `dijkstra(graph, s)` çağrılarak `s` düğümünden diğer düğümlere olan en kısa yol maliyetleri (`dist`) elde edilir.
+- Ulaşılamayan düğümler otomatik olarak değerlendirme dışı kalır; çünkü `dist` sözlüğünde yer almazlar.
+- `s` dışındaki ulaşılabilir düğümlerin mesafeleri toplanır (`total`).
+- Skor şu şekilde hesaplanır:
+  - `reachable_count / total`  
+  Burada `reachable_count`, `s` dışındaki ulaşılabilir düğüm sayısıdır.
+
+**Top 5 Gösterimi**
+Uygulamada merkeziyet skorları hesaplandıktan sonra, düğümler skorlarına göre azalan biçimde sıralanarak **Top-5** düğüm listelenebilir. Bu liste, ağda en “bağlantılı” veya en “erişilebilir/merkezi” düğümlerin hızlıca görülmesini sağlar.
+
+
+**Yorum:**  
+- Skoru yüksek düğümler, ağın geri kalanına daha düşük toplam maliyetle erişebilen, yani “merkezde/stratejik konumda” duran düğümlerdir.
+- Ağ parçalıysa (birden fazla bağlı bileşen varsa) düğüm tüm ağa erişemeyebilir; bu durumda closeness değeri sadece **ulaşılabilir düğümler** üzerinden hesaplanır ve doğal olarak düşebilir.
+
+**Centrality Sonuç Ekranı**
+
+![Centrality ekran görüntüsü](images/centrality.png)
+
+
+
+#### 2.6.2 Connected Components (Bağlı Bileşenler)
+ 
+Bağlı bileşen (connected component), bir grafın içinde kendi içerisinde bağlantılı olan düğüm kümeleridir. Başka bir ifadeyle, aynı bileşendeki herhangi iki düğüm arasında en az bir yol vardır; farklı bileşenlerdeki düğümler arasında ise yol yoktur. Sosyal ağ bağlamında bağlı bileşenler, ağın **ayrı topluluklara/parçalara** ayrılıp ayrılmadığını göstermede kullanılır.
+
+**Bu projedeki yaklaşım:**
+- Tüm düğümler `graph.nodes` içinden alınır ve deterministik bir çıktı üretmek için `sorted(...)` ile sıralanır.
+- Her düğüm için:
+  - Eğer düğüm daha önce ziyaret edildiyse (`visited`) atlanır.
+  - Ziyaret edilmemişse, o düğüm yeni bir bileşenin başlangıcı kabul edilir ve bir BFS benzeri tarama başlatılır.
+- Tarama sırasında:
+  - `deque` tabanlı kuyruk (`q`) kullanılarak, bileşen içindeki tüm erişilebilir düğümler bulunur.
+  - Bulunan düğümler `comp` listesine eklenir.
+- Her tamamlanan `comp`, `comps` listesine eklenir ve sonuçta tüm bileşenler liste halinde döndürülür.
+
+**Çıktı formatı:**
+- Fonksiyon `List[List[int]]` döndürür.  
+  Her iç liste bir bağlı bileşeni temsil eder ve bileşenin içerdiği düğüm kimliklerini (node id) barındırır.
+
+**Yorum:**
+- Eğer graf tek parçaysa, sonuç tek bir bileşen (tek iç liste) içerir.
+- Graf birden fazla parçaya ayrılmışsa, her parça ayrı bir bileşen olarak raporlanır. Bu durum sosyal ağda kopuk grupların veya izole düğümlerin varlığına işaret edebilir.
+
+** Components Sonuç Ekranı**
+
+![Components ekran görüntüsü](images/components.png)
 
 
 
