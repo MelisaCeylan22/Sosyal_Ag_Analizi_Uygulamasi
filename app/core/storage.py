@@ -81,9 +81,6 @@ class StorageService:
         return g
 
     # ---------------- CSV ----------------
-    # Beklenen kolonlar (hocanın örneğine yakın):
-    # DugumId, Aktiflik, Etkilesim, Baglanti Sayisi, Komsular
-    # Komsular örn: "2 3 4" veya "2,3,4"
     @staticmethod
     def load_csv(path: str) -> Graph:
         g = Graph()
