@@ -440,7 +440,7 @@ class MainWindow(QMainWindow):
             QMessageBox.information(self, "Edge Weights", "(Edge yok)")
             return
         lines = [f"{u}-{v}   w={e.weight:.6f}" for (u, v), e in sorted(self.graph.edges.items())]
-        QMessageBox.information(self, "Edge Weights", "\n".join(lines))
+        self._show_text_dialog("Edge Weights", "\n".join(lines))
 
     def _show_result(self, title: str, out: dict, start=None, goal=None) -> None:
         # tabloyu temizle
@@ -553,7 +553,10 @@ class MainWindow(QMainWindow):
     def show_adj_list_clicked(self) -> None:
         adj = StorageService.adjacency_list(self.graph)
         text = "\n".join([f"{k}: {v}" for k, v in adj.items()])
-        QMessageBox.information(self, "Komşuluk Listesi", text if text else "(Boş)")
+        if not text:
+            QMessageBox.information(self, "Komşuluk Listesi", "(Boş)")
+        else:
+            self._show_text_dialog("Komşuluk Listesi", text)
 
     def show_adj_matrix_clicked(self) -> None:
         res = StorageService.adjacency_matrix(self.graph)
@@ -574,7 +577,7 @@ class MainWindow(QMainWindow):
         for rid, row in zip(ids, mat):
             lines.append(str(rid).rjust(3) + " " + " ".join([str(x).rjust(3) for x in row]))
 
-        QMessageBox.information(self, "Komşuluk Matrisi", "\n".join(lines))
+        self._show_text_dialog("Komşuluk Matrisi", "\n".join(lines))
 
 
     # ---------- Render ----------
@@ -616,6 +619,25 @@ class MainWindow(QMainWindow):
             it = self.edge_items.get(key)
             if it and hasattr(it, "set_weight"):
                 it.set_weight(e.weight)
+
+    def _show_text_dialog(self, title: str, text: str, w: int = 700, h: int = 600) -> None:
+        """Show a scrollable dialog with long text (read-only)."""
+        dlg = QDialog(self)
+        dlg.setWindowTitle(title)
+        dlg.resize(w, h)
+
+        lay = QVBoxLayout(dlg)
+        te = QTextEdit()
+        te.setReadOnly(True)
+        te.setPlainText(text)
+        te.setStyleSheet("font-family: Courier New; font-size: 10pt;")
+        lay.addWidget(te)
+
+        btn = QPushButton("Kapat")
+        btn.clicked.connect(dlg.accept)
+        lay.addWidget(btn)
+
+        dlg.exec()
 
     # ---------- Helpers ----------
     def _read_node_inputs(self) -> Node:
@@ -776,7 +798,7 @@ class MainWindow(QMainWindow):
                     self.node_items[nid].set_color(col)
 
             text = f"Renk sayısı: {k}\n\n" + "\n".join([f"{nid} -> c{col}" for nid, col in sorted(coloring.items())])
-            QMessageBox.information(self, "Welsh–Powell", text)
+            self._show_text_dialog("Welsh–Powell", text)
         except Exception as e:
             QMessageBox.critical(self, "Hata", str(e))
 
