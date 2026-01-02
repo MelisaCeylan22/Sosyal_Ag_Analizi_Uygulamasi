@@ -38,7 +38,8 @@ Uygulama aşağıdaki ana bileşenleri kapsar:
 - Görsel ekranda algoritmanın adım adım ilerleyişi
 - Kaydedilebilir/yüklenebilir graf veri dosyaları (JSON/CSV)
 
-  
+
+  ---
 
 ## 2. Algoritmalar ve Analizler
 
@@ -460,8 +461,8 @@ Bu implementasyon, aday düğümleri `heapq` tabanlı bir **öncelik kuyruğu** 
 - `closed` en fazla V düğüm tutar.
 - `pq` pratikte birden fazla aday kayıt barındırabilir; büyüklüğü problem yapısına bağlıdır ancak tipik olarak V ve E ile ilişkilidir.
 
-### 2.6 Ek Analizler
-#### 2.6.1 Merkeziyet (Centrality) Ölçümleri
+### 2.5 Ek Analizler
+#### 2.5.1 Merkeziyet (Centrality) Ölçümleri
 
 Bu projede, sosyal ağ grafı üzerinde düğümlerin ağ içindeki “önemini/merkeziliğini” yorumlamak amacıyla iki temel merkeziyet metriği uygulanmıştır: **Degree Centrality** ve **Closeness Centrality**. Bu metrikler, her düğüm için sayısal bir skor üretir ve düğümler skorlarına göre karşılaştırılabilir.
 
@@ -507,7 +508,7 @@ Uygulamada merkeziyet skorları hesaplandıktan sonra, düğümler skorlarına g
 
 
 
-#### 2.6.2 Connected Components (Bağlı Bileşenler)
+#### 2.5.2 Connected Components (Bağlı Bileşenler)
  
 Bağlı bileşen (connected component), bir grafın içinde kendi içerisinde bağlantılı olan düğüm kümeleridir. Başka bir ifadeyle, aynı bileşendeki herhangi iki düğüm arasında en az bir yol vardır; farklı bileşenlerdeki düğümler arasında ise yol yoktur. Sosyal ağ bağlamında bağlı bileşenler, ağın **ayrı topluluklara/parçalara** ayrılıp ayrılmadığını göstermede kullanılır.
 
@@ -529,10 +530,353 @@ Bağlı bileşen (connected component), bir grafın içinde kendi içerisinde ba
 - Eğer graf tek parçaysa, sonuç tek bir bileşen (tek iç liste) içerir.
 - Graf birden fazla parçaya ayrılmışsa, her parça ayrı bir bileşen olarak raporlanır. Bu durum sosyal ağda kopuk grupların veya izole düğümlerin varlığına işaret edebilir.
 
-** Components Sonuç Ekranı**
+**Components Sonuç Ekranı**
 
 ![Components ekran görüntüsü](images/components.png)
 
+#### 2.5.3 Welsh–Powell Renklendirme — Graf Boyama
+
+Welsh–Powell, bir grafın düğümlerini komşu düğümler aynı renge sahip olmayacak şekilde boyamayı amaçlayan klasik bir sezgisel (heuristic) yöntemdir. Graf boyama problemi genel haliyle NP-zor olduğundan, Welsh–Powell gibi sezgisel yaklaşımlar pratikte hızlı ve uygulanabilir çözümler üretmek için kullanılır. Bu yöntem optimum renk sayısını garanti etmez; ancak özellikle orta ölçekli graflarda basit ve etkili sonuçlar verebilir.
+
+**Literatür Notu**
+
+Welsh–Powell yaklaşımı, düğümleri dereceye göre sıralayıp yüksek dereceli düğümleri önce boyayarak çatışma olasılığını azaltmayı hedefleyen klasik bir graf boyama sezgisidir. Zaman çizelgeleme (timetabling) gibi uygulamalarda da graf boyama formülasyonları üzerinden sıkça referans verilen yöntemlerden biridir.
+
+**Karmaşıklık Analizi**
+
+Bu implementasyonda düğümler dereceye göre sıralandıktan sonra her renk turunda tüm düğümler tekrar kontrol edilir ve her aday düğüm için komşularında renk çatışması olup olmadığına bakılır.
+
+- **Zaman Karmaşıklığı (yaklaşık): O(V² + V·E)**
+  - Düğümleri dereceye göre sıralama: **O(V log V)**
+  - Renklendirme aşamasında:
+    - Dış döngü `for u in nodes`: en fazla V kez
+    - Her renk için ikinci döngü `for v in nodes`: en fazla V kez
+    - Her `v` için komşu kontrolü `for nb in neighbors(...)`: toplamda kenar taramasına bağlı
+  - Pratikte yoğun (dense) graflarda maliyet artar; seyrek (sparse) graflarda daha verimlidir.
+
+- **Bellek Karmaşıklığı: O(V)**
+  - `color` sözlüğü en fazla V düğüm için renk tutar.
+  - Düğüm listesi ve geçici değişkenler V mertebesindedir.
+
+**Akış Diyagramı**
+```mermaid
+flowchart TD
+  A[Start] --> B[SortByDegree]
+  B --> C[InitColors]
+  C --> D{AllColored}
+  D -- No --> E[PickNextUncolored]
+  E --> F[AssignNewColor]
+  F --> G[ScanNodesForSameColor]
+  G --> H{CanColor}
+  H -- Yes --> I[ColorNode]
+  H -- No --> G
+  I --> G
+  G --> J[IncreaseColor]
+  J --> D
+  D -- Yes --> K[ReturnColorMap]
+```
+**Çalışma Mantığı**
+
+Bu projedeki Welsh–Powell uygulaması, renk atamasını aşağıdaki şekilde gerçekleştirir:
+
+- Düğümlerin dereceye göre sıralanması
+   - nodes listesi grafın tüm düğümlerinden oluşturulur.
+   - Ardından düğümler, komşu sayısına (dereceye) göre azalan sırada sıralanır:
+   yüksek dereceli düğümler daha önce ele alınır.
+   Bu tercih, renklendirme sırasında çatışma ihtimalini azaltmayı hedefler.
+
+- Renk sözlüğü ve renk sayacı
+   - color sözlüğü, her düğümün hangi renge atandığını tutar (node_id -> color_id).
+   - current_color her yeni renklendirme turunda kullanılan renk kimliğidir (0, 1, 2, ...).
+
+- Renklendirme turları
+   - Sıralı düğümler üzerinde dolaşılır:
+   - Eğer düğüm zaten boyandıysa atlanır.
+   - Boyanmamışsa, bu düğüme yeni bir renk atanır: color[u] = current_color.
+
+- Aynı renge boyanabilecek diğer düğümleri seçme
+   - Aynı tur içinde, listedeki diğer boyanmamış düğümler v tek tek denenir.
+   - Bir düğümün current_color ile boyanabilmesi için:
+      - v düğümünün komşuları arasında (neighbors(graph, v)) o renge sahip bir düğüm olmamalıdır.
+   - Bu kontrol kodda şu mantıkla yapılır:
+      - Komşular gezilir, herhangi bir komşunun rengi current_color ise ok = False yapılır ve düğüm boyanmaz.
+      - Aksi durumda color[v] = current_color atanır.
+
+- Yeni renge geçiş
+   - Bu tur tamamlanınca current_color += 1 ile bir sonraki renge geçilir.
+   - Tüm düğümler boyandığında fonksiyon color sözlüğünü döndürür.
+
+- Çıktı
+   - Fonksiyonun çıktısı Dict[int, int] tipindedir ve her düğümün renk kimliğini içerir.
+   - Bu çıktı, görselleştirme katmanında düğümlerin renklerle gösterilmesi için kullanılabilir.
+ 
+**Welsh - Powell Çalışma Ekranı**
+
+![Welsh ekran görüntüsü](images/welsh.png)
+
+---
+
+## 3 Mimari ve Tasarım
+
+Bu bölümde uygulamanın nesne yönelimli (OOP) tasarımı, modüler yapısı ve bileşenlerin sorumlulukları açıklanmaktadır. Sistem; graf veri modelini, algoritma katmanını, görselleştirme/UI katmanını ve veri saklama (JSON/CSV) katmanını birbirinden ayrıştıracak şekilde yapılandırılmıştır. Bu sayede hem yeni algoritmalar eklemek hem de arayüz veya veri formatlarını değiştirmek daha yönetilebilir hale getirilmiştir.
+
+### 3.1 Modül Yapısı
+
+Uygulama temel olarak aşağıdaki modüllerden oluşur:
+
+#### 3.1.1 Model Katmanı (Graph / Node / Edge)
+Model katmanı, sosyal ağın graf temsiline karşılık gelir.
+- **Graph**: Düğümleri ve kenarları tutan ana yapıdır; komşuluk ilişkileri bu yapı üzerinden okunur.
+- **Node**: Sosyal ağdaki bir varlığı (kullanıcı/aktör) temsil eder. Uygulamada düğümler genellikle `id` ile yönetilir.
+- **Edge**: Düğümler arasındaki bağlantıyı temsil eder. Bağlantılar ağırlıklıysa (weight) bu değer en kısa yol algoritmalarında kullanılır.
+Bu katmanın amacı, algoritmaların çalışacağı “tek doğru veri kaynağını” sağlamaktır.
+
+#### 3.1.2 Algoritmalar Katmanı
+Algoritmalar katmanı, graf üzerinde analiz ve yol bulma işlemlerini gerçekleştirir. Bu projede örnek olarak:
+- `bfs.py` (Genişlik öncelikli arama)
+- `dfs.py` (Derinlik öncelikli arama)
+- `dijkstra.py` (Ağırlıklı en kısa yol)
+- `astar.py` (Sezgisel en kısa yol)
+- `welsh_powell_coloring.py` (Graf renklendirme)
+- `centrality.py` (Degree ve closeness merkeziyet ölçümleri)
+- `connected_components.py` (Bağlı bileşen analizi)
+
+Bu modüller, graf modeline bağımlıdır ancak arayüzden bağımsız olacak şekilde tasarlanmıştır. Böylece algoritmalar hem UI üzerinden görselleştirilebilir hem de gerektiğinde bağımsız şekilde test edilebilir.
+
+#### 3.1.3 Ortak Fonksiyonlar / Yardımcı Katman (base.py)
+Algoritmaların tekrar eden ihtiyaçlarını karşılamak üzere ortak yardımcı fonksiyonlar tek bir yerde toplanmıştır. Örneğin:
+- `neighbors(graph, u)`: Bir düğümün komşularını döndürme
+- `edge_weight(graph, u, v)`: Kenar ağırlığını okuma
+- `reconstruct_path(prev, start, goal)`: Öncel (prev/parent) bilgisiyle yol üretme
+- `node_pos(graph, id)`: A* heuristic için düğüm konumu
+
+Bu yaklaşım kod tekrarını azaltır, bakım maliyetini düşürür ve algoritmaların daha okunur olmasını sağlar.
+
+#### 3.1.4 UI ve Görselleştirme Katmanı
+UI/görselleştirme katmanı, kullanıcı etkileşimini ve algoritma çıktılarının ekranda sunulmasını yönetir.
+- Kullanıcının düğüm/kenar eklemesi, algoritma seçmesi ve çalıştırması bu katmandan yapılır.
+- Algoritma çalışırken düğümlerin/kenarların renklendirilmesi veya adım adım ilerlemenin gösterimi bu katmanda gerçekleştirilir.
+- Bu katman, algoritma katmanından dönen sonuçları (ör. `order`, `parent/prev`, `path`, `color`) görsel bileşenlere dönüştürür.
+
+#### 3.1.5 Veri Saklama Katmanı (JSON / CSV)
+Uygulama, graf verisinin dışa aktarılması ve tekrar yüklenmesi için dosya tabanlı veri saklamayı destekler.
+- **JSON**: Grafın düğüm/kenar yapısını daha esnek ve ayrıntılı taşımak için uygundur.
+- **CSV**: Özellikle kenar listesi veya düğüm listesi gibi tabular yapıların dışa aktarımında pratik kullanım sağlar.
+
+Bu sayede kullanıcı, oluşturduğu grafı kaydedip daha sonra aynı veriyle analize devam edebilir.
+
+#### 3.1.6 Test ve Hata Yönetimi
+Sistem, kullanıcı hatalarını ve geçersiz durumları yönetmek için kontrol mekanizmaları içerir. Örnek olarak:
+- Duplicate edge (tekrar eden bağlantı) kontrolü
+- Self-loop (düğümün kendisine bağlanması) kontrolü
+- Negatif ağırlık gibi algoritmalar için geçersiz girişlerin engellenmesi (özellikle Dijkstra)
+Bu kontroller hem uygulamanın kararlılığını artırır hem de algoritmaların doğru çalışmasını destekler.
+
+### 3.2 Sınıf Yapısı ve Modüllerin Mermaid ile Gösterimi
+
+Bu projede yapı üç ana katmanda toplanmıştır:
+- `core/` : Veri modeli ve çekirdek servisler (Graph, Node, Edge, Storage, WeightService)
+- `algorithms/` : Graf algoritmaları (BFS, DFS, Dijkstra, A*, Renklendirme, Centrality, Components)
+- `ui/` : Kullanıcı arayüzü ve görselleştirme (MainWindow, GraphView, GraphicsItems, TestDialog)
+
+#### 3.2.1 Modül Bağımlılık Diyagramı
+```mermaid
+flowchart TD
+  UI[ui] --> CORE[core]
+  UI --> ALG[algorithms]
+  ALG --> CORE
+  ALG --> BASE[algorithms base]
+  BASE --> CORE
+  CORE --> STORAGE[core storage]
+  CORE --> WEIGHT[core weight service]
+```
+
+#### 3.2.2 Sınıf Diyagramı
+
+```mermaid
+classDiagram
+  class Graph
+  class Node
+  class Edge
+  class Storage
+  class WeightService
+
+  class MainWindow
+  class GraphView
+  class GraphicsItems
+  class TestDialog
+
+  class AlgorithmsBase
+  class BFS
+  class DFS
+  class Dijkstra
+  class AStar
+  class WelshPowell
+  class Centrality
+  class Components
+
+  Graph "1" --> "*" Node : contains
+  Graph "1" --> "*" Edge : contains
+  Edge "*" --> "1" Node : from
+  Edge "*" --> "1" Node : to
+
+  Storage ..> Graph : save load
+  WeightService ..> Graph : read update weights
+
+  MainWindow ..> GraphView : controls
+  GraphView ..> Graph : renders
+  GraphView ..> GraphicsItems : uses
+  TestDialog ..> MainWindow : test ui
+
+  AlgorithmsBase ..> Graph : neighbors weight path utils
+  BFS ..> AlgorithmsBase
+  DFS ..> AlgorithmsBase
+  Dijkstra ..> AlgorithmsBase
+  AStar ..> AlgorithmsBase
+  WelshPowell ..> AlgorithmsBase
+  Centrality ..> AlgorithmsBase
+  Components ..> AlgorithmsBase
+```
+
+### 3.3 Modüllerin İşlevleri ve Sorumlulukları
+
+#### 3.3.1 core/ (Çekirdek Katman)
+
+- graph.py (Graph)
+   - Uygulamanın ana veri yapısıdır.
+   - Düğüm ve kenarları tutar; komşuluk ilişkisi algoritmaların çalıştığı temel kaynaktır.
+
+- node.py (Node)
+   - Sosyal ağdaki varlığı temsil eder (kullanıcı/aktör).
+   - (Varsa) konum bilgisi/etiket gibi alanlar burada tutulur.
+
+- edge.py (Edge)
+   - Düğümler arasındaki bağlantıyı temsil eder.
+   - (Varsa) ağırlık (weight) gibi bilgiler en kısa yol algoritmalarında kullanılır.
+
+- storage.py (Storage)
+   - Grafın dosyaya kaydedilmesi ve dosyadan geri yüklenmesini yönetir (JSON/CSV mantığı).
+   - UI katmanı “kaydet/yükle” komutlarını bu katman üzerinden çağırır.
+
+- weight_service.py (WeightService)
+   - Kenar ağırlıklarının okunması/güncellenmesi gibi işlemleri merkezi bir yerden yönetir.
+   - Algoritmaların ağırlık bilgisine tutarlı biçimde erişmesini sağlar.
+
+#### 3.3.2 algorithms/ (Algoritmalar Katmanı)
+
+- **base.py:**
+   - Ortak yardımcı fonksiyonları içerir (neighbors, edge_weight, reconstruct_path, node_pos vb.).
+   - Böylece BFS/DFS/Dijkstra/A* gibi dosyalarda tekrar eden kod azaltılır.
+
+- **bfs.py:** Genişlik öncelikli gezme; order ve parent üretir (animasyon/izleme için uygun).
+
+- **dfs.py:** Derinlik öncelikli gezme; stack tabanlı çalışır, order ve parent üretir.
+
+- **dijkstra.py:** Negatif olmayan ağırlıklarda en kısa yol; dist, prev, hedef verilirse path üretir.
+
+- **astar.py:** Heuristic (Öklid) kullanarak hedefe yönelimli en kısa yol araması; g, prev, path üretir.
+
+- **welsh_powell.py:** Graf boyama; düğümlere renk atayıp çakışmayı önlemeyi hedefler.
+
+- **centrality.py:** Degree ve closeness merkeziyet ölçümleri üretir; düğüm önem/merkezilik analizi için kullanılır.
+
+- **components.py:** Bağlı bileşenleri bulur; ağın parçalı olup olmadığını ve alt grupları gösterir.
+
+#### 3.3.3 ui/ (Arayüz ve Görselleştirme Katmanı)
+
+- **main_window.py (MainWindow):** Ana ekran; kullanıcı etkileşimleri, butonlar/menüler ve algoritma seçimleri burada yönetilir.
+
+- **graph_view.py (GraphView):** Grafın ekranda çizilmesi ve güncellenmesi (zoom/pan/yerleşim/animasyon) gibi işlemleri üstlenir.
+
+- **graphics_items.py (GraphicsItems):** Düğüm ve kenarların ekranda temsil edilen grafik öğeleri (renk, seçili durum, vurgu vb.).
+
+- **test_dialog.py (TestDialog):** Test amaçlı senaryoların çalıştırılması veya test girdilerinin alınması için kullanılan diyalog ekranı.
+
+---
+
+## 4 İş Akışları - Kullanıcı Akışları
 
 
+Bu bölümde uygulamanın arayüzü, temel kullanım senaryoları ekran görüntüleri üzerinden açıklanmaktadır. Her alt başlıkta ilgili ekranın neyi gösterdiği, kullanıcı adımları raporlanmıştır.
 
+### 4.1 Ana Ekran ve Genel Arayüz
+
+![Ana ekran](images/main.png)
+
+**Ekran Açıklaması:**  
+
+- **Sol taraf (Graf Görselleştirme Alanı):**
+  - Düğümler (node) görsel olarak yerleştirilmiş ve etiketlenmiştir (ör. `N1`, `N2` gibi).
+  - Kenarlar (edge) çizgilerle gösterilir ve üzerlerinde **ağırlık değerleri** (ör. `0.026`, `0.328`, `0.410` gibi) etiket olarak yer alır.
+  - Düğümlerin yanında görülen `c0`, `c1`, `c2` gibi ifadeler, özellikle **Welsh–Powell renklendirme** sonucu oluşan **renk sınıflarını** temsil eder (aynı renkte olan komşu düğüm bulunmayacak şekilde boyama yapılır).
+  - Bu alan, BFS/DFS sırasında ziyaret edilen düğümlerin renkle vurgulanması veya Dijkstra/A* ile bulunan yolun belirginleştirilmesi gibi animasyonları da destekleyecek şekilde tasarlanmıştır.
+
+- **Sağ taraf (Kontrol Paneli):**
+  1) **Test Grafı (Rastgele)**
+     - `Düğüm sayısı (n)` ve `Yoğunluk (p)` parametreleri ile rastgele graf üretilir.
+     - Görselde örnek olarak `n = 32` ve `p = 0.05` seçilmiştir.
+     - **Rastgele Graf Oluştur** butonu ile model ve görsel alan aynı anda güncellenir.
+
+  2) **Animasyon**
+     - `Adım süresi (ms)` değeri algoritma animasyonunun hızını belirler.
+     - Görselde adım süresi `250 ms` olarak ayarlanmıştır.
+     - **Animasyonu Durdur** butonu ile adım adım ilerleme kontrol edilebilir.
+
+  3) **Algoritmalar**
+     - `Start` ve `Goal` alanları algoritmalara giriş parametresi sağlar.
+     - BFS/DFS gibi gezme algoritmaları `Start` üzerinden başlatılır.
+     - Dijkstra ve A* için genellikle `Start → Goal` hedefli arama yapılır.
+     - İlgili butonlar:
+       - **BFS**, **DFS**
+       - **Dijkstra (Start→Goal)**
+       - **A* (Start→Goal)**
+       - **Components** (Bağlı bileşen analizi)
+       - **Centrality (Degree + Closeness)** (Merkeziyet ölçümleri)
+       - **Welsh–Powell (Coloring)** (Graf boyama)
+       - **Tüm Algoritmaları Test Et** (toplu çalıştırma senaryosu)
+
+
+#### 4.1.1 Node CRUD (Düğüm Yönetimi)
+Bu bölüm kullanıcıya düğüm ekleme, güncelleme ve silme imkânı sunar.
+
+- **ID**: Düğümün benzersiz kimliğidir. Graf içerisinde düğümler bu değer üzerinden takip edilir.
+- **Name**: Düğümün etiketi/ismi (görselleştirmede gösterim için).
+- **Aktiflik / Etkileşim / Bağlantı**: Düğümün sahip olduğu ölçümler/özelliklerdir. Bu değerler, ağırlık (weight) hesaplama mantığında kullanılacak parametreler olarak tasarlanmıştır.
+- Butonlar:
+  - **Node Ekle**: Girilen bilgilerle yeni bir düğüm oluşturur ve graf modeline ekler.
+  - **Node Güncelle**: Var olan bir düğümün alanlarını günceller.
+  - **Node Sil**: Seçilen/ID’si verilen düğümü grafdan kaldırır.
+
+> Amaç: Kullanıcı, rastgele graf dışında manuel olarak da ağ kurabilsin ve düğüm özellikleri ile analiz davranışını etkileyebilsin.
+
+#### 4.1.2 Edge CRUD (Kenar Yönetimi)
+Bu bölüm, iki düğüm arasında bağlantı (edge) ekleme ve silme işlemlerini sağlar.
+
+- **U**: Kaynak düğüm ID
+- **V**: Hedef düğüm ID
+- Butonlar:
+  - **Edge Ekle (weight auto)**: U ve V arasına kenar ekler; ağırlık değeri sistem tarafından mevcut formüle göre otomatik hesaplanır.
+  - **Edge Sil**: U-V arasındaki kenarı kaldırır.
+
+> Not: Bu yaklaşım, kenar ağırlıklarının kullanıcı tarafından elle girilmesi yerine sistematik bir şekilde üretilmesini sağlar; özellikle Dijkstra ve A* gibi algoritmaların tutarlı şekilde çalışması için önemlidir.
+
+#### 4.1.3 Weight Formülü (Katsayılar)
+Bu bölüm, kenar ağırlıklarının hesaplanmasında kullanılan katsayıların kullanıcı tarafından ayarlanmasına olanak tanır.
+
+- **a (aktiflik)**, **b (etkileşim)**, **c (bağlantı)**: Ağırlık hesaplamasında kullanılan katsayılardır.
+- Butonlar:
+  - **Tüm Edge Weight’lerini Güncelle**: Katsayılar değiştirildikten sonra graf üzerindeki tüm kenar ağırlıklarını yeniden hesaplar.
+  - **Edge Weight’lerini Göster**: Mevcut ağırlık değerlerini kullanıcıya listeleme/çıktı olarak sunar.
+
+> Bu tasarım sayesinde kullanıcı, ağdaki “yakınlık/maliyet” kavramını farklı senaryolara göre yeniden ölçekleyebilir. Böylece en kısa yol ve benzeri analizler, kullanıcı tercihine göre farklı sonuçlar üretebilir.
+
+#### 4.1.4 Dosya (JSON/CSV) + Çıktılar
+Bu kısım, graf verisinin kaydedilmesi ve yeniden yüklenmesini sağlar.
+
+- **CSV Yükle** (ekranda görülüyor): CSV formatında bir graf verisini içe aktarmak için kullanılır.
+- JSON/CSV kaydetme-yükleme seçenekleri ile kullanıcı aynı graf üzerinde daha sonra da analiz yapabilir.
+
+
+---
+
+## Test Senaryoları
