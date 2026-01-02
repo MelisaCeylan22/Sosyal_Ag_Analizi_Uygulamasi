@@ -616,7 +616,7 @@ Bu projedeki Welsh–Powell uygulaması, renk atamasını aşağıdaki şekilde 
 
 ---
 
-## 3 Mimari ve Tasarım
+## 3. Mimari ve Tasarım
 
 Bu bölümde uygulamanın nesne yönelimli (OOP) tasarımı, modüler yapısı ve bileşenlerin sorumlulukları açıklanmaktadır. Sistem; graf veri modelini, algoritma katmanını, görselleştirme/UI katmanını ve veri saklama (JSON/CSV) katmanını birbirinden ayrıştıracak şekilde yapılandırılmıştır. Bu sayede hem yeni algoritmalar eklemek hem de arayüz veya veri formatlarını değiştirmek daha yönetilebilir hale getirilmiştir.
 
@@ -794,7 +794,7 @@ classDiagram
 
 ---
 
-## 4 İş Akışları - Kullanıcı Akışları
+## 4. İş Akışları - Kullanıcı Akışları
 
 
 Bu bölümde uygulamanın arayüzü, temel kullanım senaryoları ekran görüntüleri üzerinden açıklanmaktadır. Her alt başlıkta ilgili ekranın neyi gösterdiği, kullanıcı adımları raporlanmıştır.
@@ -879,4 +879,223 @@ Bu kısım, graf verisinin kaydedilmesi ve yeniden yüklenmesini sağlar.
 
 ---
 
-## Test Senaryoları
+## 5. Test Senaryoları
+
+
+### 5.1 S-Küçük (n=15, p=0.18)
+- Start=1, Goal=7
+- a=1.0, b=1.0, c=1.0
+
+**Görsel-1 (Graf):** ![](images/test2.png)  
+**Görsel-2 (BFS Animasyon):** ![](images/bfs.png)
+
+**Algoritma Sonuçları (S-Küçük)**
+
+<p float="left">
+  <img src="images/test3.png" width="33%" />
+  <img src="images/test4.png" width="33%" />
+  <img src="images/test5.png" width="33%" />
+</p>
+
+<p><em>Şekil: S-Küçük senaryosu algoritma sonuçları (BFS/DFS/Dijkstra/A*/Components/Centrality) ve Welsh–Powell renklendirme özeti.</em></p>
+
+**Kısa Değerlendirme (S-Küçük):**
+- BFS ve DFS aynı graf üzerinde farklı ziyaret sıraları üretmiştir; bu durum arama stratejilerinin (katman bazlı vs. derinlik bazlı) doğal sonucudur.
+- Dijkstra ve A* aynı hedefe yönelik arama yapmasına rağmen ürettikleri yollar ve maliyetleri farklıdır. Bu senaryoda:
+  - Dijkstra: **1→12→2→7** (maliyet: **0.083600**)
+  - A*: **1→5→10→7** (maliyet: **0.9717479**)
+  Bu fark, A*’ın kullandığı sezgisel (heuristic) ve ağırlıkların dağılımı ile ilişkilidir.
+- Components çıktısı grafın tek parça olmadığını göstermiş; ana bileşen dışında küçük alt bileşenler ve izole düğümler bulunmuştur.
+- Centrality çıktısı, ağın en bağlantılı düğümlerini (degree) ve ana bileşende en erişilebilir düğümlerini (closeness) ayırt etmeyi sağlamıştır.
+- Welsh–Powell sonucu grafın bu senaryodaki çatışmasız boyanması için **3 rengin yeterli olduğunu** göstermiştir.
+
+
+---
+
+### 5.2 S-Orta (n=80, p=0.06)
+- Start=1, Goal=25
+- a=1.0, b=1.0, c=1.0
+
+**Görsel-1 (Graf):** ![](images/1test.png)  
+**Görsel-2 (DFS Animasyon):** ![](images/2test.png)
+
+**Algoritma Sonuçları (S-Orta)**
+
+<p float="left">
+  <img src="images/3test.png" width="33%" />
+  <img src="images/4test.png" width="33%" />
+  <img src="images/5test.png" width="33%" />
+</p>
+
+**Kısa Değerlendirme (S-Orta):**
+- Components sonucuna göre graf **tek bileşenden oluşmaktadır** (start düğümünden tüm düğümlere erişim vardır).
+- Dijkstra ve A* aynı hedefe giderken **farklı yollar** bulmuştur:
+  - Dijkstra maliyet: **0.108616**
+  - A* maliyet: **0.477313**
+  Bu fark, A*’ın sezgisel fonksiyona göre aramayı yönlendirmesi ve ağırlık dağılımından kaynaklanabilir.
+- Centrality hesaplaması bu senaryoda en maliyetli işlemlerden biri olup süre **20.8379 ms** seviyesindedir (closeness hesaplaması için çoklu en-kısa-yol hesaplamaları gerektiğinden beklenen bir durumdur).
+- Orta ölçekli graf üzerinde Welsh–Powell algoritması **5 renk** kullanarak çatışmasız boyama üretmiştir. Bu çıktı, graf yoğunluğu arttıkça ihtiyaç duyulan renk sayısının yükseldiğini gözlemlemeyi de sağlar.
+
+### 5.3. Sonuçların Yorumlanması (İki Senaryonun Karşılaştırması)
+
+Bu projede kenar ağırlıkları (weight), düğümlerin özellik benzerliğine dayalı bir “uzaklık/maliyet” fikrini temsil edecek şekilde kurgulanmıştır. Bu yaklaşımda temel sezgi şudur:
+
+- **Benzer özelliklere sahip düğümler arasındaki uzaklık küçük olduğundan ağırlık değeri yüksek olur.**
+- **Farklı özelliklere sahip düğümler arasındaki uzaklık arttıkça ağırlık değeri azalır.**
+
+Bu nedenle ağırlıklar klasik “mesafe = büyük maliyet” sezgisinden farklı bir davranış sergileyebilir. Yani ağırlık değeri bazen “yakınlık/benzerlik” skoruna dönüşür. Bu durum, özellikle en kısa yol algoritmalarında (Dijkstra/A*) çıkan maliyetlerin ve yolların beklenenden farklı görünmesine yol açabilir.
+
+#### (1) BFS/DFS süreleri ve ziyaret sıraları neden farklı?
+BFS ve DFS ağırlıkları dikkate almaz; sadece grafın bağlantı yapısı ve komşu sıralamasına göre hareket eder.
+- **BFS** katman katman ilerlediği için “yakın komşular” hızlıca genişler; ziyaret sırası daha “dengeli” yayılır.
+- **DFS** bir dala derinlemesine gidip geri döndüğü için sıra daha “uzun zincirler” gibi görünür.
+
+İki senaryoda da ziyaret sayısının 80/80 veya 11/11 çıkması, grafın ilgili başlangıç düğümünden erişilebilen düğüm sayısını gösterir. Orta senaryoda Components=1 çıktığı için BFS/DFS tüm düğümlere ulaşmıştır.
+
+#### (2) Dijkstra ve A* maliyetleri neden farklı? (ve neden “az olmalıydı” hissi oluşuyor?)
+Dijkstra ve A* **toplam maliyeti en aza indirmeye** çalışır. Burada kritik nokta: “maliyet” olarak kullanılan değer weight’lerdir.
+
+Tanıma göre:
+- **Benzer düğüm → weight yüksek**
+- **Farklı düğüm → weight düşük**
+
+Bu durumda algoritmalar “en kısa yol” ararken aslında şunu yapar:
+- Toplam weight’i küçültmek için **daha düşük ağırlıklı (daha farklı)** kenarları tercih edebilir.
+- Bu da “benzer düğümlerden geçmesini beklerdim” sezgisini tersine çevirebilir.
+
+Örneğin:
+- Küçük senaryoda Dijkstra maliyeti çok düşük (0.083600) çıkmışken A* daha yüksek (0.9717479) çıkmıştır.
+- Orta senaryoda da Dijkstra (0.108616) < A* (0.477313).
+
+Bu farkların iki ana sebebi vardır:
+
+**Sebep A — Dijkstra global optimum arar, A* sezgisel yönlendirilir**  
+- Dijkstra, tüm aday yolları sistematik şekilde değerlendirir ve hedefe giden en düşük maliyetli yolu garantiler (negatif weight yoksa).
+- A* ise `f = g + h` kullanır:  
+  - `g`: şu ana kadar biriken maliyet  
+  - `h`: hedefe “yaklaşma” tahmini (heuristic)  
+Heuristic hedefe “geometrik yakınlık” üzerinden iyi yönlendirme yapmazsa veya weight mantığınız “benzerlik=yüksek” olduğundan sezgi ile maliyet aynı yönde çalışmazsa, A* daha hızlı bitirip **daha pahalı bir yol** bulabilir.
+
+**Sebep B — Weight tanımı maliyet/mesafe sezgisinden farklı**
+Klasik en kısa yolda beklenen: “yakın → düşük maliyet”.  
+Sizde ise: “benzer → yüksek weight”.  
+Dolayısıyla Dijkstra/A* çıktısını yorumlarken şu iki yaklaşımdan hangisini istediğinize karar vermek gerekir:
+
+- Eğer weight’i **maliyet** gibi yorumlamak istiyorsak, benzerlik arttıkça maliyetin düşmesi beklenir. (yani “benzer → düşük” daha tutarlı olur)
+- Eğer weight’i **benzerlik skoru** gibi yorumlamak istiyorsak, en iyi yol “maksimum benzerlik” olmalıdır. Bu durumda “en kısa yol” yerine “en yüksek toplam ağırlık” gibi bir hedef gerekir (veya weight’i ters çevirerek maliyet üretmek gerekir).
+
+Bu raporda mevcut sonuçlar, projenin mevcut weight mantığına göre tutarlıdır: algoritmalar “küçük toplam weight” aradığı için bazı durumlarda farklı/az benzer bağlantılardan geçen yollar seçilebilir.
+
+#### (3) Neden bazı algoritmaların çalışma süreleri beklenenden büyük/küçük çıktı?
+İki senaryoda sürelerin değişimi ölçek ve işlem türüyle ilgilidir:
+
+- **BFS/DFS**: Temel dolaşım; genelde çok hızlıdır (O(V+E)).
+- **Dijkstra/A***: Öncelik kuyruğu (heap) kullanımı ve çok sayıda gevşetme (relaxation) adımı vardır; BFS/DFS’ye göre daha maliyetlidir.
+- **Centrality (özellikle closeness)**: En pahalı işlemdir çünkü her düğüm için çoklu en kısa yol hesabı gerekir.  
+  Bu nedenle küçük senaryoda 0.4504 ms iken orta senaryoda 20.8379 ms’ye çıkması beklenen bir durumdur.
+
+Özetle: “Dijkstra daha az sürmeli” gibi bir beklenti varsa, bu genellikle Dijkstra’nın sadece tek yol bulduğu düşüncesinden gelir; fakat pratikte Dijkstra birçok düğümü ve kenarı değerlendirerek optimum garantisi sağlar. Buna karşın A* uygun bir heuristic ile bazı durumlarda daha az düğüm genişleterek daha hızlı olabilir; ancak maliyet optimalliğini her zaman garanti etmeyebilir (özellikle heuristic/maliyet uyumsuzsa).
+
+#### (4) Welsh–Powell renk sayısı neden küçükte 3, ortada 5 çıktı?
+Welsh–Powell renklendirme, düğüm derece sırasına göre boyama yapar. Graf büyüdükçe ve bağlantılar arttıkça (özellikle yüksek dereceli düğümler varsa) komşu çatışmalar artar ve daha fazla renk gerekebilir.
+
+- Küçük graf (15 düğüm): **3 renk**
+- Orta graf (80 düğüm): **5 renk**
+
+Bu fark, orta ölçekli grafın daha karmaşık bağlantı yapısına sahip olmasının doğal sonucudur.
+
+## 6. Sonuç ve Tartışma
+
+Bu proje kapsamında geliştirilen **Sosyal Ağ Analizi Uygulaması**, kullanıcıların bir grafı (sosyal ağ) hem görsel olarak oluşturup düzenleyebildiği hem de temel ağ analizi algoritmalarını aynı arayüz üzerinden çalıştırabildiği bütünleşik bir sistem olarak başarıyla tamamlanmıştır. Uygulama; düğüm/kenar yönetimi, otomatik ağırlık üretimi, algoritmaların çalıştırılması ve çıktının raporlanması gibi süreçleri tek bir ortamda birleştirerek pratik bir analiz aracı sunmaktadır.
+
+### 6.1 Başarılar (Gerçeklenen Hedefler)
+Aşağıdaki maddeler, proje hedefleri doğrultusunda başarıyla tamamlanan bileşenleri özetlemektedir:
+
+- [x] **Graf Modeli ve OOP Tasarım**
+  - Node/Edge/Graph temelli modüler yapı kuruldu.
+  - Algoritmalar ayrı modüllerde konumlandırılarak yeniden kullanılabilirlik sağlandı.
+
+- [x] **Temel Gezme Algoritmaları**
+  - **BFS** ve **DFS** implement edildi.
+  - Ziyaret sırası ve parent ilişkileri üretilerek gezme ağacı çıkarılabilir hale getirildi.
+
+- [x] **En Kısa Yol Algoritmaları**
+  - **Dijkstra** (Start→Goal) ile en düşük maliyetli yol ve toplam maliyet hesaplandı.
+  - **A\*** (Start→Goal) sezgisel (heuristic) kullanarak hedefe yönelik arama gerçekleştirdi.
+
+- [x] **Bağlı Bileşen Analizi**
+  - Grafın kaç parçadan oluştuğu (connected components) hesaplandı.
+  - Küçük senaryoda parçalı yapı, orta senaryoda tek bileşen durumu doğrulandı.
+
+- [x] **Centrality Analizi**
+  - **Degree Centrality** ve **Closeness Centrality** hesaplandı.
+  - Top-5 düğümler listelenerek ağda “merkezi” düğümler tespit edildi.
+
+- [x] **Welsh–Powell Renklendirme**
+  - Graf boyama implement edildi.
+  - Küçük senaryoda 3 renk, orta senaryoda 5 renk ile çatışmasız boyama elde edildi.
+
+- [x] **Görselleştirme ve Kullanıcı Etkileşimi**
+  - Graf görsel alanda düğüm ve kenarlarıyla çizildi.
+  - Kenar ağırlıkları ve düğüm etiketleri UI üzerinde gösterildi.
+  - Algoritma sonuçları ayrı bir çıktı penceresinde raporlandı.
+
+- [x] **Veri Saklama ve Çıktı Alma**
+  - **JSON/CSV yükleme-kaydetme** desteklendi.
+  - Komşuluk listesi ve komşuluk matrisi çıktıları üretilebildi.
+
+- [x] **Test Senaryoları ile Doğrulama**
+  - Küçük (15 düğüm) ve orta (80 düğüm) ölçekli iki senaryoda algoritmalar çalıştırıldı.
+  - Ziyaret sıraları, yol/maliyet, bileşen sayısı, centrality top-5 ve renklendirme çıktıları raporlandı.
+
+---
+
+### 6.2 Sınırlılıklar
+Proje hedefleri başarıyla karşılanmış olsa da, mevcut tasarımın bazı sınırlılıkları bulunmaktadır:
+
+- **Ağırlık mantığının yorumlanması**
+  - Kenar ağırlıkları “benzerlik/uzaklık” yaklaşımına göre üretildiğinden, klasik “mesafe=maliyet” yorumuyla her zaman birebir örtüşmeyebilir.
+  - Bu durum Dijkstra/A* gibi algoritmalarda “beklenen yol” ile “hesaplanan minimum maliyetli yol” arasında sezgisel farklar oluşturabilir.
+
+- **Çok büyük graf ölçeğinde performans**
+  - BFS/DFS ölçeklenebilir olsa da özellikle **closeness centrality** hesaplaması, çoklu en kısa yol çağrıları gerektirdiği için büyük graflarda süreyi belirgin biçimde artırabilir.
+  - Görselleştirme tarafında da düğüm sayısı arttıkça çizim ve etiket yoğunluğu okunabilirliği azaltabilir.
+
+- **UI/UX kısıtları**
+  - Çok kalabalık graf görünümlerinde düğüm/kenar etiketleri üst üste binebilir.
+  - Rastgele yerleşim veya sabit yerleşim stratejileri büyük graf için her zaman ideal görünümü sağlamayabilir.
+
+- **Algoritma kapsamı**
+  - Projede temel analizler tamamlanmış olsa da, topluluk tespiti (community detection) gibi daha ileri sosyal ağ analizleri henüz eklenmemiştir.
+
+---
+
+### 6.3 Olası Geliştirmeler (Gelecek Çalışmalar)
+Uygulama ileriye dönük olarak aşağıdaki geliştirmelerle daha güçlü hale getirilebilir:
+
+- **Ağırlık modelinin iyileştirilmesi**
+  - “Benzerlik skoru” ile “maliyet” kavramını uyumlamak için ağırlıkların terslenmesi/normalize edilmesi (ör. `cost = 1/(ε+similarity)` veya `cost = maxW - weight`) eklenebilir.
+  - Kullanıcıya kenar ağırlığını manuel düzenleme veya farklı ağırlık modelleri seçme imkânı sunulabilir.
+
+- **Ek algoritmalar**
+  - Minimum spanning tree (Prim/Kruskal), PageRank, Betweenness centrality, Topological sort (yönlü grafikler için) gibi ek analizler eklenebilir.
+  - Topluluk tespiti (Louvain, Girvan–Newman) gibi sosyal ağ odaklı yöntemler sisteme entegre edilebilir.
+
+- **Görselleştirme ve layout geliştirmeleri**
+  - Force-directed (spring) layout, hiyerarşik layout gibi daha gelişmiş yerleşimler eklenebilir.
+  - Büyük graflarda etiketleri akıllı gizleme/zoom ile gösterme gibi okunabilirlik iyileştirmeleri yapılabilir.
+
+- **Test ve ölçüm altyapısı**
+  - Tek ölçüm yerine otomatik çoklu deneme (örn. 10 tekrar) ile ortalama ve standart sapma raporlanabilir.
+  - Sonuçlar otomatik olarak CSV/PDF rapor formatında dışa aktarılabilir.
+
+- **Kullanılabilirlik geliştirmeleri**
+  - Algoritma çıktılarını UI üzerinde “vurgulama modu” ile daha anlaşılır göstermek (yol çizgisi kalınlaştırma, ziyaret edilen düğümleri sırayla numaralandırma vb.) eklenebilir.
+  - Senaryo kayıt/geri yükleme (preset) sistemi ile test senaryoları tek tıkla tekrar çalıştırılabilir.
+
+---
+
+### 6.4 Genel Değerlendirme
+Sonuç olarak, proje kapsamında geliştirilen uygulama; sosyal ağların grafik modelleme yaklaşımıyla temsil edilmesini, temel analiz algoritmalarının uygulanmasını ve sonuçların hem görsel hem metinsel olarak kullanıcıya sunulmasını başarıyla sağlamıştır. Küçük ve orta ölçekli test senaryolarında tüm algoritmalar beklenen biçimde çalışmış, çıktıların tutarlılığı gözlemlenmiştir. Uygulamanın modüler yapısı ve algoritma çeşitliliği, ilerleyen çalışmalarda yeni analiz yöntemlerinin eklenmesini ve daha büyük ölçekli senaryolara uyarlanmasını mümkün kılmaktadır.
+
+
